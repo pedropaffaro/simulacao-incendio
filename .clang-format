@@ -1,0 +1,35 @@
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 120
+
+# Chaves na mesma linha (K&R style)
+BreakBeforeBraces: Attach
+
+# Alinhamento de colunas em declarações consecutivas
+AlignConsecutiveAssignments:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+
+AlignConsecutiveDeclarations:
+  Enabled: false
+
+AlignConsecutiveMacros:
+  Enabled: false
+
+# Ponteiros colados ao tipo: int *p → int* p
+PointerAlignment: Right
+
+# Espaço antes de parênteses de função: f() não f ()
+SpaceBeforeParens: ControlStatements
+
+# Casos do switch indentados
+IndentCaseLabels: true
+
+# Espaços dentro de { inicializadores }
+SpacesInContainerLiterals: false
+
+# Não quebrar parâmetros de função desnecessariamente
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
