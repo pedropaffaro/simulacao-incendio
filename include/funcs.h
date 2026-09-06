@@ -2,6 +2,7 @@
 #define FUNCS_H
 
 #include "constants.h"
+#include <stdio.h>
 
 /**
  * @brief Retorna o estado da célula após a ativação de uma zona de contenção.
@@ -87,5 +88,25 @@ float percentual_queimado(int queimadas, int em_chamas, int combustiveis_iniciai
  * @return Percentual protegido (0.0 a 100.0).
  */
 float percentual_protegido(int contencoes, int combustiveis_iniciais);
+
+LEITURA_STATUS validar_argc(int argc, const char *argv0);
+
+FILE *abrir_arquivo(const char *caminho);
+
+int alocar_grade(GRADE *g, long long total_celulas);
+
+void liberar_grade(GRADE *g);
+
+void gerar_terreno(GRADE *g, long long total_celulas, unsigned int seed);
+
+LEITURA_STATUS ler_config_geral(FILE *input, int *L, int *C, int *P, int *T, unsigned int *seed, int *LIMIAR);
+
+LEITURA_STATUS ler_config_vento(FILE *input, int *vento_linha, int *vento_coluna, int *vento_intensidade);
+
+LEITURA_STATUS ler_contagem_focos_zonas(FILE *input, int *F, int *num_zonas);
+
+LEITURA_STATUS ler_focos(FILE *input, int F, int L, int C, int *cobertura, int *estado_atual, int *tempo_atual);
+
+LEITURA_STATUS ler_zonas_contencao(FILE *input, int num_zonas, int L, int C, int P, int *ativacao);
 
 #endif

@@ -78,4 +78,20 @@ typedef enum {
 
 #define ERRO -1
 
+typedef struct {
+    int *cobertura;
+    int *umidade;
+    int *estado_atual;
+    int *tempo_atual;
+    int *proximo_estado;
+    int *proximo_tempo;
+    int *ativacao;
+} GRADE;
+
+typedef enum {
+    LEITURA_OK = 0,
+    LEITURA_ERRO_SISTEMA,
+    LEITURA_ERRO_ENTRADA
+} LEITURA_STATUS;
+
 #endif
