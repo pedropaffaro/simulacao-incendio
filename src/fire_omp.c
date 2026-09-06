@@ -5,32 +5,32 @@
 #include "../include/funcs.h"
 
 int main(int argc, char *argv[]) {
-    if (validar_argc(argc, argv[0]) != LEITURA_OK) return 1;
+    if (validar_argc(argc, argv[0]) != LEITURA_OK) return EXIT_FAILURE;
 
     FILE *input = abrir_arquivo(argv[1]);
-    if (input == NULL) return 1;
+    if (input == NULL) return EXIT_FAILURE;
 
     int L, C, P, T, LIMIAR;
     unsigned int seed;
     LEITURA_STATUS stats;
 
     stats = ler_config_geral(input, &L, &C, &P, &T, &seed, &LIMIAR);
-    if (stats != LEITURA_OK) { fclose(input); return stats == LEITURA_ERRO_SISTEMA ? 1 : 0; }
+    if (stats != LEITURA_OK) { fclose(input); return stats == LEITURA_ERRO_SISTEMA ? EXIT_FAILURE : EXIT_SUCCESS; }
 
     int vento_linha, vento_coluna, vento_intensidade;
     stats = ler_config_vento(input, &vento_linha, &vento_coluna, &vento_intensidade);
-    if (stats != LEITURA_OK) { fclose(input); return stats == LEITURA_ERRO_SISTEMA ? 1 : 0; }
+    if (stats != LEITURA_OK) { fclose(input); return stats == LEITURA_ERRO_SISTEMA ? EXIT_FAILURE : EXIT_SUCCESS; }
 
     int F, num_zonas_contencao;
     stats = ler_contagem_focos_zonas(input, &F, &num_zonas_contencao);
-    if (stats != LEITURA_OK) { fclose(input); return stats == LEITURA_ERRO_SISTEMA ? 1 : 0; }
+    if (stats != LEITURA_OK) { fclose(input); return stats == LEITURA_ERRO_SISTEMA ? EXIT_FAILURE : EXIT_SUCCESS; }
 
     long long total_celulas = (long long)L * C;
-    GRADE grade;
-    if (!alocar_grade(&grade, total_celulas)) {
+    CELULAS grade;
+    if (!alocar_cels(&grade, total_celulas)) {
         fclose(input);
-        liberar_grade(&grade);
-        return 1;
+        liberar_cels(&grade);
+        return EXIT_FAILURE;
     }
 
     gerar_terreno(&grade, total_celulas, seed);
@@ -38,15 +38,15 @@ int main(int argc, char *argv[]) {
     stats = ler_focos(input, F, L, C, grade.cobertura, grade.estado_atual, grade.tempo_atual);
     if (stats != LEITURA_OK) {
         fclose(input);
-        liberar_grade(&grade);
-        return stats == LEITURA_ERRO_SISTEMA ? 1 : 0;
+        liberar_cels(&grade);
+        return stats == LEITURA_ERRO_SISTEMA ? EXIT_FAILURE : EXIT_SUCCESS;
     }
 
     stats = ler_zonas_contencao(input, num_zonas_contencao, L, C, P, grade.ativacao);
     if (stats != LEITURA_OK) {
         fclose(input);
-        liberar_grade(&grade);
-        return stats == LEITURA_ERRO_SISTEMA ? 1 : 0;
+        liberar_cels(&grade);
+        return stats == LEITURA_ERRO_SISTEMA ? EXIT_FAILURE : EXIT_SUCCESS;
     }
 
     fclose(input);
@@ -78,6 +78,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    liberar_grade(&grade);
+    liberar_cels(&grade);
     return 0;
 }
