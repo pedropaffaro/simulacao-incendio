@@ -1,15 +1,16 @@
-CC     = gcc
+CC = gcc
 CFLAGS = -Wall -Wextra -O2 -fopenmp
-INC    = -I include
-SRC    = src/funcs.c
+INC = -Iinclude
+LDFLAGS = -lm
+SRC = src/funcs.c
 
 all: fire_seq fire_omp
 
 fire_seq: src/fire_seq.c $(SRC)
-	$(CC) $(CFLAGS) $(INC) $^ -o $@
+	$(CC) $(CFLAGS) $(INC) $^ -o $@ $(LDFLAGS)
 
 fire_omp: src/fire_omp.c $(SRC)
-	$(CC) $(CFLAGS) $(INC) $^ -o $@
+	$(CC) $(CFLAGS) $(INC) $^ -o $@ $(LDFLAGS)
 
 define run_tests
 	@pass=0; fail=0; got=$$(mktemp); exp=$$(mktemp); \
@@ -44,3 +45,5 @@ test: fire_seq fire_omp
 
 clean:
 	rm -f fire_seq fire_omp
+
+.PHONY: all test test_seq test_omp run clean
