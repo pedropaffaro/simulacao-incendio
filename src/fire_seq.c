@@ -1,4 +1,4 @@
-#define _POSIX_C_SOURCE 200112L
+// #define _POSIX_C_SOURCE 200112L
 typedef struct {
     int vertical;
     int horizontal;
@@ -111,12 +111,11 @@ typedef struct {
     int linha;
     int coluna;
 } COORDENADA;
+
 #include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Funções comuns aos dois executáveis. Antes vinham de include/funcs.h
-   (implementadas em src/funcs.c); agora são definidas aqui mesmo. */
 
 COORDENADA get_coordenada(long long idx, int C) {
     COORDENADA coord;
