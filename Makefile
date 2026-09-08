@@ -5,7 +5,7 @@ SRC    = src/funcs.c
 
 all: fire_seq fire_omp
 
-fire_seq: src/fire_seq.c $(SRC)
+fire_seq: src/fire_seq.c
 	$(CC) $(CFLAGS) $(INC) $^ -o $@
 
 fire_omp: src/fire_omp.c $(SRC)
