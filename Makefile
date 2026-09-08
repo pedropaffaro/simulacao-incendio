@@ -1,29 +1,49 @@
-# all:
-# 	clang -Xpreprocessor -fopenmp -I/opt/homebrew/opt/libomp/include -L/opt/homebrew/opt/libomp/lib -lomp src/fire_omp.c -o fire_omp
+CC = gcc
+CFLAGS = -Wall -Wextra -O2 -fopenmp
+INC = -Iinclude
+LDFLAGS = -lm
+SRC = src/funcs.c
 
-# run: 
-# 	./fire_omp
-CC = clang
-CFLAGS = -Wall -Xpreprocessor -fopenmp -Iinclude -I/opt/homebrew/opt/libomp/include
-LDFLAGS = -L/opt/homebrew/opt/libomp/lib -lomp -lm
+all: fire_seq fire_omp
 
-# Compila todos os arquivos .c da pasta src/ (ex: fire_omp.c, funcs.c)
-SRCS = $(wildcard src/*.c)
-OBJS = $(SRCS:.c=.o)
-TARGET = fire_omp
+fire_seq: src/fire_seq.c $(SRC)
+	$(CC) $(CFLAGS) $(INC) $^ -o $@ $(LDFLAGS)
 
-all: $(TARGET)
+fire_omp: src/fire_omp.c $(SRC)
+	$(CC) $(CFLAGS) $(INC) $^ -o $@ $(LDFLAGS)
 
-$(TARGET): $(OBJS)
-	$(CC) $(OBJS) $(LDFLAGS) -o $(TARGET)
+define run_tests
+	@pass=0; fail=0; got=$$(mktemp); exp=$$(mktemp); \
+	for in_file in tests/in/*.in; do \
+		name=$$(basename $$in_file .in); \
+		./$(1) $$in_file | grep -v '^tempo:' > $$got; \
+		grep -v '^tempo:' tests/out/$$name.out > $$exp; \
+		cat $$got; \
+		if diff -q $$got $$exp > /dev/null 2>&1; then \
+			echo "[OK]   $$name"; \
+			pass=$$((pass + 1)); \
+		else \
+			echo "[FAIL] $$name"; \
+			diff $$got $$exp; \
+			fail=$$((fail + 1)); \
+		fi; \
+		echo ""; \
+	done; \
+	rm -f $$got $$exp; \
+	echo "---"; \
+	echo "$$pass passou(aram), $$fail falhou(aram)"
+endef
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+test_seq: fire_seq
+	$(call run_tests,fire_seq)
 
-run: $(TARGET)
-	./$(TARGET) entrada_carga_pequena.txt
+test_omp: fire_omp
+	$(call run_tests,fire_omp)
+
+test: fire_seq fire_omp
+	@echo "=== SEQ ===" && $(MAKE) -s test_seq && echo "" && echo "=== OMP ===" && $(MAKE) -s test_omp
 
 clean:
-	rm -f src/*.o $(TARGET)
+	rm -f fire_seq fire_omp
 
-.PHONY: all run clean
+.PHONY: all test test_seq test_omp run clean
