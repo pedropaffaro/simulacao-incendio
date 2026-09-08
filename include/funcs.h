@@ -93,11 +93,11 @@ LEITURA_STATUS validar_argc(int argc, const char *argv0);
 
 FILE *abrir_arquivo(const char *caminho);
 
-int alocar_grade(GRADE *g, long long total_celulas);
+int alocar_cels(CELULAS *g, long long total_celulas);
 
-void liberar_grade(GRADE *g);
+void liberar_cels(CELULAS *g);
 
-void gerar_terreno(GRADE *g, long long total_celulas, unsigned int seed);
+void gerar_terreno(CELULAS *g, long long total_celulas, unsigned int seed);
 
 LEITURA_STATUS ler_config_geral(FILE *input, int *L, int *C, int *P, int *T, unsigned int *seed, int *LIMIAR);
 
@@ -108,5 +108,12 @@ LEITURA_STATUS ler_contagem_focos_zonas(FILE *input, int *F, int *num_zonas);
 LEITURA_STATUS ler_focos(FILE *input, int F, int L, int C, int *cobertura, int *estado_atual, int *tempo_atual);
 
 LEITURA_STATUS ler_zonas_contencao(FILE *input, int num_zonas, int L, int C, int P, int *ativacao);
+
+COORDENADA get_coordenada(long long idx, int C);
+
+long long int get_idx(COORDENADA coord, int C);
+
+void print_data(COUNTERS cnt, int passo_atual, PICO pico, float pct_queimado, float pct_protegido, unsigned long long checksum, double tempo);
+
 
 #endif

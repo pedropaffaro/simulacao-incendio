@@ -86,12 +86,32 @@ typedef struct {
     int *proximo_estado;
     int *proximo_tempo;
     int *ativacao;
-} GRADE;
+} CELULAS;
 
 typedef enum {
     LEITURA_OK = 0,
     LEITURA_ERRO_SISTEMA,
     LEITURA_ERRO_ENTRADA
 } LEITURA_STATUS;
+
+typedef struct {
+    int passo;
+    int quantidade;
+} PICO;
+
+typedef struct {
+    int combustiveis_iniciais;
+    int nao_combustiveis;
+    int intactas;
+    int em_chamas;
+    int queimadas;
+    int contencao;
+    int total_ignicoes;
+} COUNTERS;
+
+typedef struct {
+    int linha;
+    int coluna;
+} COORDENADA;
 
 #endif

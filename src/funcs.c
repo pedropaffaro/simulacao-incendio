@@ -2,6 +2,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+COORDENADA get_coordenada(long long idx, int C) {
+    COORDENADA coord;
+    coord.linha  = (int)(idx / C);
+    coord.coluna = (int)(idx % C);
+    return coord;
+}
+
+long long int get_idx(COORDENADA coord, int C) {
+    return (long long)coord.linha * C + coord.coluna;
+}
+
 ESTADO_CODIGO estado_apos_ativacao(ESTADO_CODIGO estado) {
     switch (estado) {
         case ESTADO_INTACTA:
@@ -61,8 +72,8 @@ float percentual_protegido(int contencoes, int combustiveis_iniciais) {
     return (100.0 * contencoes) / combustiveis_iniciais;
 }
 
-int alocar_grade(GRADE *g, long long total_celulas) {
-    *g = (GRADE){0};
+int alocar_cels(CELULAS *g, long long total_celulas) {
+    *g                = (CELULAS){0};
     g->cobertura      = malloc(total_celulas * sizeof(int));
     g->umidade        = malloc(total_celulas * sizeof(int));
     g->estado_atual   = malloc(total_celulas * sizeof(int));
@@ -70,15 +81,14 @@ int alocar_grade(GRADE *g, long long total_celulas) {
     g->proximo_estado = malloc(total_celulas * sizeof(int));
     g->proximo_tempo  = malloc(total_celulas * sizeof(int));
     g->ativacao       = malloc(total_celulas * sizeof(int));
-    if (!g->cobertura || !g->umidade || !g->estado_atual || !g->tempo_atual ||
-        !g->proximo_estado || !g->proximo_tempo || !g->ativacao) {
+    if (!g->cobertura || !g->umidade || !g->estado_atual || !g->tempo_atual || !g->proximo_estado || !g->proximo_tempo || !g->ativacao) {
         fprintf(stderr, "[Erro] Não foi possível alocar memoria para as estruturas da matriz.\n");
         return 0;
     }
     return 1;
 }
 
-void liberar_grade(GRADE *g) {
+void liberar_cels(CELULAS *g) {
     free(g->cobertura);
     free(g->umidade);
     free(g->estado_atual);
@@ -88,7 +98,7 @@ void liberar_grade(GRADE *g) {
     free(g->ativacao);
 }
 
-void gerar_terreno(GRADE *g, long long total_celulas, unsigned int seed) {
+void gerar_terreno(CELULAS *g, long long total_celulas, unsigned int seed) {
     for (long long i = 0; i < total_celulas; i++) {
         int val = rand_r(&seed) % 100;
         if (val <= COBERTURA_MAX_AGUA) {
@@ -142,9 +152,7 @@ LEITURA_STATUS ler_config_vento(FILE *input, int *vento_linha, int *vento_coluna
         fprintf(stderr, "[Erro] Não foi possível ler a configuração do vento.\n");
         return LEITURA_ERRO_SISTEMA;
     }
-    if (*vento_linha < -1 || *vento_linha > 1 ||
-        *vento_coluna < -1 || *vento_coluna > 1 ||
-        (*vento_linha == 0 && *vento_coluna == 0) ||
+    if (*vento_linha < -1 || *vento_linha > 1 || *vento_coluna < -1 || *vento_coluna > 1 || (*vento_linha == 0 && *vento_coluna == 0) ||
         *vento_intensidade < INTENSIDADE_MIN || *vento_intensidade > INTENSIDADE_MAX) {
         printf("[Erro] Os valores inseridos para configuração do vento são inválidos.\n");
         return LEITURA_ERRO_ENTRADA;
@@ -165,6 +173,7 @@ LEITURA_STATUS ler_contagem_focos_zonas(FILE *input, int *F, int *num_zonas) {
 }
 
 LEITURA_STATUS ler_focos(FILE *input, int F, int L, int C, int *cobertura, int *estado_atual, int *tempo_atual) {
+
     for (int k = 0; k < F; k++) {
         int linha, coluna;
         if (fscanf(input, "%d %d", &linha, &coluna) != 2) {
@@ -185,7 +194,7 @@ LEITURA_STATUS ler_focos(FILE *input, int F, int L, int C, int *cobertura, int *
             return LEITURA_ERRO_ENTRADA;
         }
         estado_atual[idx] = ESTADO_EM_CHAMAS;
-        tempo_atual[idx] = tempo_queima_inicial(cobertura[idx]);
+        tempo_atual[idx]  = tempo_queima_inicial(cobertura[idx]);
     }
     return LEITURA_OK;
 }
@@ -197,13 +206,9 @@ LEITURA_STATUS ler_zonas_contencao(FILE *input, int num_zonas, int L, int C, int
             fprintf(stderr, "[Erro] Não foi possível ler a zona de contenção %d.\n", k + 1);
             return LEITURA_ERRO_SISTEMA;
         }
-        if (passo_ativacao < 0 || passo_ativacao >= P ||
-            linha_inicial < 0 || linha_inicial >= L ||
-            coluna_inicial < 0 || coluna_inicial >= C ||
-            linha_final < 0 || linha_final >= L ||
-            coluna_final < 0 || coluna_final >= C ||
-            linha_inicial > linha_final ||
-            coluna_inicial > coluna_final) {
+        if (passo_ativacao < 0 || passo_ativacao >= P || linha_inicial < 0 || linha_inicial >= L || coluna_inicial < 0 ||
+            coluna_inicial >= C || linha_final < 0 || linha_final >= L || coluna_final < 0 || coluna_final >= C ||
+            linha_inicial > linha_final || coluna_inicial > coluna_final) {
             printf("[Erro] Os valores inseridos para contenção são inválidos.\n");
             return LEITURA_ERRO_ENTRADA;
         }
@@ -216,4 +221,20 @@ LEITURA_STATUS ler_zonas_contencao(FILE *input, int num_zonas, int L, int C, int
         }
     }
     return LEITURA_OK;
+}
+
+void print_data(COUNTERS cnt, int passo_atual, PICO pico, float pct_queimado, float pct_protegido, unsigned long long checksum,
+                double tempo) {
+    printf("passos: %d\n", passo_atual);
+    printf("nao_combustiveis: %d\n", cnt.nao_combustiveis);
+    printf("intactas: %d\n", cnt.intactas);
+    printf("em_chamas: %d\n", cnt.em_chamas);
+    printf("queimadas: %d\n", cnt.queimadas);
+    printf("contencao: %d\n", cnt.contencao);
+    printf("total_ignicoes: %d\n", cnt.total_ignicoes);
+    printf("pico_ignicoes: %d %d\n", pico.passo, pico.quantidade);
+    printf("percentual_queimado: %.2f\n", pct_queimado);
+    printf("percentual_protegido: %.2f\n", pct_protegido);
+    printf("checksum: %llu\n", checksum);
+    printf("tempo: %.6f\n", tempo);
 }

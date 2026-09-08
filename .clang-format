@@ -1,6 +1,6 @@
 BasedOnStyle: LLVM
 IndentWidth: 4
-ColumnLimit: 120
+ColumnLimit: 140
 
 # Chaves na mesma linha (K&R style)
 BreakBeforeBraces: Attach

@@ -2,14 +2,13 @@ CC = gcc
 CFLAGS = -Wall -Wextra -O2 -fopenmp
 INC = -Iinclude
 LDFLAGS = -lm
-SRC = src/funcs.c
 
 all: fire_seq fire_omp
 
-fire_seq: src/fire_seq.c $(SRC)
+fire_seq: src/fire_seq.c
 	$(CC) $(CFLAGS) $(INC) $^ -o $@ $(LDFLAGS)
 
-fire_omp: src/fire_omp.c $(SRC)
+fire_omp: src/fire_omp.c
 	$(CC) $(CFLAGS) $(INC) $^ -o $@ $(LDFLAGS)
 
 define run_tests
