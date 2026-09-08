@@ -1,0 +1,3 @@
+*.o
+fire_omp
+fire_seq
