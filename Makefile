@@ -2,7 +2,6 @@ CC = gcc
 CFLAGS = -Wall -Wextra -O2 -fopenmp
 INC = -Iinclude
 LDFLAGS = -lm
-
 all: fire_seq fire_omp
 
 fire_seq: src/fire_seq.c
