@@ -2,19 +2,19 @@
 typedef struct {
     int vertical;
     int horizontal;
-} DIRECTION;
+} DIRECAO;
 
 // clang-format off
-#define DIRECAO_NORTE    (DIRECTION){-1,  0}
-#define DIRECAO_NORDESTE (DIRECTION){-1,  1}
-#define DIRECAO_LESTE    (DIRECTION){ 0,  1}
-#define DIRECAO_SUDESTE  (DIRECTION){ 1,  1}
-#define DIRECAO_SUL      (DIRECTION){ 1,  0}
-#define DIRECAO_SUDOESTE (DIRECTION){ 1, -1}
-#define DIRECAO_OESTE    (DIRECTION){ 0, -1}
-#define DIRECAO_NOROESTE (DIRECTION){-1, -1}
+#define DIRECAO_NORTE    (DIRECAO){-1,  0}
+#define DIRECAO_NORDESTE (DIRECAO){-1,  1}
+#define DIRECAO_LESTE    (DIRECAO){ 0,  1}
+#define DIRECAO_SUDESTE  (DIRECAO){ 1,  1}
+#define DIRECAO_SUL      (DIRECAO){ 1,  0}
+#define DIRECAO_SUDOESTE (DIRECAO){ 1, -1}
+#define DIRECAO_OESTE    (DIRECAO){ 0, -1}
+#define DIRECAO_NOROESTE (DIRECAO){-1, -1}
 
-static const DIRECTION VIZINHOS[8] = {
+static const DIRECAO VIZINHOS[8] = {
     DIRECAO_NORTE,    DIRECAO_NORDESTE,
     DIRECAO_LESTE,    DIRECAO_SUDESTE,
     DIRECAO_SUL,      DIRECAO_SUDOESTE,
