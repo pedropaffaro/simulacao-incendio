@@ -1,4 +1,4 @@
-// #define _POSIX_C_SOURCE 200112L
+#define _POSIX_C_SOURCE 200112L
 typedef struct {
     int vertical;
     int horizontal;
@@ -175,13 +175,13 @@ int potencial_ignicao(int S, int fator_combustivel, int umidade) {
     return (S * fator_combustivel * (100 - umidade)) / 100;
 }
 
-float percentual_queimado(int queimadas, int em_chamas, int combustiveis_iniciais) {
+double percentual_queimado(int queimadas, int em_chamas, int combustiveis_iniciais) {
     if (combustiveis_iniciais == 0)
         return 0.0;
     return (100.0 * (queimadas + em_chamas)) / combustiveis_iniciais;
 }
 
-float percentual_protegido(int contencoes, int combustiveis_iniciais) {
+double percentual_protegido(int contencoes, int combustiveis_iniciais) {
     if (combustiveis_iniciais == 0)
         return 0.0;
     return (100.0 * contencoes) / combustiveis_iniciais;
@@ -269,7 +269,7 @@ LEITURA_STATUS ler_config_vento(FILE *input, int *vento_linha, int *vento_coluna
     }
     if (*vento_linha < -1 || *vento_linha > 1 || *vento_coluna < -1 || *vento_coluna > 1 || (*vento_linha == 0 && *vento_coluna == 0) ||
         *vento_intensidade < INTENSIDADE_MIN || *vento_intensidade > INTENSIDADE_MAX) {
-        printf("[Erro] Os valores inseridos para configuração do vento são inválidos.\n");
+        fprintf(stderr, "[Erro] Os valores inseridos para configuração do vento são inválidos.\n");
         return LEITURA_ERRO_ENTRADA;
     }
     return LEITURA_OK;
@@ -296,16 +296,16 @@ LEITURA_STATUS ler_focos(FILE *input, int F, int L, int C, int *cobertura, int *
             return LEITURA_ERRO_SISTEMA;
         }
         if (linha < 0 || linha >= L || coluna < 0 || coluna >= C) {
-            printf("[Erro] Os valores inseridos para os limites do foco inicial são inválidos.\n");
+            fprintf(stderr, "[Erro] Os valores inseridos para os limites do foco inicial são inválidos.\n");
             return LEITURA_ERRO_ENTRADA;
         }
         long long idx = (long long)linha * C + coluna;
         if (estado_atual[idx] == ESTADO_EM_CHAMAS) {
-            printf("[Erro] Os valores inseridos do foco inicial são inválidos (foco repetido).\n");
+            fprintf(stderr, "[Erro] Os valores inseridos do foco inicial são inválidos (foco repetido).\n");
             return LEITURA_ERRO_ENTRADA;
         }
         if (cobertura[idx] == COBERTURA_CODIGO_AGUA || cobertura[idx] == COBERTURA_CODIGO_SOLO) {
-            printf("[Erro] Os valores inseridos do foco inicial são inválidos.\n");
+            fprintf(stderr, "[Erro] Os valores inseridos do foco inicial são inválidos.\n");
             return LEITURA_ERRO_ENTRADA;
         }
         estado_atual[idx] = ESTADO_EM_CHAMAS;
@@ -324,7 +324,7 @@ LEITURA_STATUS ler_zonas_contencao(FILE *input, int num_zonas, int L, int C, int
         if (passo_ativacao < 0 || passo_ativacao >= P || linha_inicial < 0 || linha_inicial >= L || coluna_inicial < 0 ||
             coluna_inicial >= C || linha_final < 0 || linha_final >= L || coluna_final < 0 || coluna_final >= C ||
             linha_inicial > linha_final || coluna_inicial > coluna_final) {
-            printf("[Erro] Os valores inseridos para contenção são inválidos.\n");
+            fprintf(stderr, "[Erro] Os valores inseridos para contenção são inválidos.\n");
             return LEITURA_ERRO_ENTRADA;
         }
         for (int r = linha_inicial; r <= linha_final; r++) {
@@ -338,7 +338,7 @@ LEITURA_STATUS ler_zonas_contencao(FILE *input, int num_zonas, int L, int C, int
     return LEITURA_OK;
 }
 
-void print_data(COUNTERS cnt, int passo_atual, PICO pico, float pct_queimado, float pct_protegido, unsigned long long checksum,
+void print_data(COUNTERS cnt, int passo_atual, PICO pico, double pct_queimado, double pct_protegido, unsigned long long checksum,
                        double tempo) {
     printf("passos: %d\n", passo_atual);
     printf("nao_combustiveis: %d\n", cnt.nao_combustiveis);
@@ -369,21 +369,21 @@ int main(int argc, char *argv[]) {
     status = ler_config_geral(input, &L, &C, &P, &T, &seed, &LIMIAR);
     if (status != LEITURA_OK) {
         fclose(input);
-        return status == LEITURA_ERRO_SISTEMA ? EXIT_FAILURE : EXIT_SUCCESS;
+        return EXIT_FAILURE;
     }
 
     int vento_linha, vento_coluna, vento_intensidade;
     status = ler_config_vento(input, &vento_linha, &vento_coluna, &vento_intensidade);
     if (status != LEITURA_OK) {
         fclose(input);
-        return status == LEITURA_ERRO_SISTEMA ? EXIT_FAILURE : EXIT_SUCCESS;
+        return EXIT_FAILURE;
     }
 
     int F, num_zonas;
     status = ler_contagem_focos_zonas(input, &F, &num_zonas);
     if (status != LEITURA_OK) {
         fclose(input);
-        return status == LEITURA_ERRO_SISTEMA ? EXIT_FAILURE : EXIT_SUCCESS;
+        return EXIT_FAILURE;
     }
 
     long long total_celulas = (long long)L * C;
@@ -400,14 +400,14 @@ int main(int argc, char *argv[]) {
     if (status != LEITURA_OK) {
         fclose(input);
         liberar_cels(&celulas);
-        return status == LEITURA_ERRO_SISTEMA ? EXIT_FAILURE : EXIT_SUCCESS;
+        return EXIT_FAILURE;
     }
 
     status = ler_zonas_contencao(input, num_zonas, L, C, P, celulas.ativacao);
     if (status != LEITURA_OK) {
         fclose(input);
         liberar_cels(&celulas);
-        return status == LEITURA_ERRO_SISTEMA ? EXIT_FAILURE : EXIT_SUCCESS;
+        return EXIT_FAILURE;
     }
 
     fclose(input);
@@ -568,8 +568,8 @@ int main(int argc, char *argv[]) {
     }
 
     // Percentuais
-    float pct_queimado  = percentual_queimado(cnt.queimadas, cnt.em_chamas, cnt.combustiveis_iniciais);
-    float pct_protegido = percentual_protegido(cnt.contencao, cnt.combustiveis_iniciais);
+    double pct_queimado  = percentual_queimado(cnt.queimadas, cnt.em_chamas, cnt.combustiveis_iniciais);
+    double pct_protegido = percentual_protegido(cnt.contencao, cnt.combustiveis_iniciais);
 
     liberar_cels(&celulas);
 
