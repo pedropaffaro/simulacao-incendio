@@ -11,25 +11,26 @@ fire_omp: src/fire_omp.c
 	$(CC) $(CFLAGS) $(INC) $^ -o $@ $(LDFLAGS)
 
 define run_tests
-	@pass=0; fail=0; got=$$(mktemp); exp=$$(mktemp); \
-	for in_file in tests/in/*.in; do \
-		name=$$(basename $$in_file .in); \
-		./$(1) $$in_file | grep -v '^tempo:' > $$got; \
-		grep -v '^tempo:' tests/out/$$name.out > $$exp; \
-		cat $$got; \
-		if diff -q $$got $$exp > /dev/null 2>&1; then \
-			echo "[OK]   $$name"; \
-			pass=$$((pass + 1)); \
-		else \
-			echo "[FAIL] $$name"; \
-			diff $$got $$exp; \
-			fail=$$((fail + 1)); \
-		fi; \
-		echo ""; \
-	done; \
-	rm -f $$got $$exp; \
-	echo "---"; \
-	echo "$$pass passou(aram), $$fail falhou(aram)"
+  @pass=0; fail=0; got=$$(mktemp); exp=$$(mktemp); out=$$(mktemp); \
+  for in_file in tests/in/*.in; do \
+    name=$$(basename $$in_file .in); \
+    ./$(1) $$in_file > $$out; \
+    cat $$out; \
+    grep -v '^tempo:' $$out > $$got; \
+    grep -v '^tempo:' tests/out/$$name.out > $$exp; \
+    if diff -q $$got $$exp > /dev/null 2>&1; then \
+      echo "[OK]   $$name"; \
+      pass=$$((pass + 1)); \
+    else \
+      echo "[FAIL] $$name"; \
+      diff $$got $$exp; \
+      fail=$$((fail + 1)); \
+    fi; \
+    echo ""; \
+  done; \
+  rm -f $$got $$exp $$out; \
+  echo "---"; \
+  echo "$$pass passou(aram), $$fail falhou(aram)"
 endef
 
 test_seq: fire_seq
