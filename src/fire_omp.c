@@ -88,7 +88,7 @@ typedef struct {
     int *proximo_estado;
     int *proximo_tempo;
     int *ativacao;
-} GRADE;
+} CELULAS;
 
 typedef enum {
     LEITURA_OK = 0,
@@ -155,8 +155,8 @@ double percentual_protegido(int contencoes, int combustiveis_iniciais) {
     return (100.0 * contencoes) / combustiveis_iniciais;
 }
 
-int alocar_grade(GRADE *g, long long total_celulas) {
-    *g = (GRADE){0};
+int alocar_grade(CELULAS *g, long long total_celulas) {
+    *g = (CELULAS){0};
     g->cobertura      = malloc(total_celulas * sizeof(int));
     g->umidade        = malloc(total_celulas * sizeof(int));
     g->estado_atual   = malloc(total_celulas * sizeof(int));
@@ -172,7 +172,7 @@ int alocar_grade(GRADE *g, long long total_celulas) {
     return 1;
 }
 
-void liberar_grade(GRADE *g) {
+void liberar_grade(CELULAS *g) {
     free(g->cobertura);
     free(g->umidade);
     free(g->estado_atual);
@@ -182,7 +182,7 @@ void liberar_grade(GRADE *g) {
     free(g->ativacao);
 }
 
-void gerar_terreno(GRADE *g, long long total_celulas, unsigned int seed) {
+void gerar_terreno(CELULAS *g, long long total_celulas, unsigned int seed) {
     for (long long i = 0; i < total_celulas; i++) {
         int val = rand_r(&seed) % 100;
         if (val <= COBERTURA_MAX_AGUA) {
@@ -334,7 +334,7 @@ int main(int argc, char *argv[]) {
     if (stats != LEITURA_OK) { fclose(input); return EXIT_FAILURE; }
 
     long long total_celulas = (long long)L * C;
-    GRADE grade;
+    CELULAS grade;
     if (!alocar_grade(&grade, total_celulas)) {
         fclose(input);
         liberar_grade(&grade);
