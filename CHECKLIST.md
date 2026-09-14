@@ -153,9 +153,15 @@
 - [ ] Pelo menos dois `schedule` comparados (ex: `static` vs `dynamic`) — o código tem **`schedule(static)` fixo** (linhas 432 e 440); não há parametrização nem registro de comparação
   - Sugestão: `#ifndef SCHED` `#define SCHED static` `#endif` + `schedule(SCHED)`, gerando dois
     binários com `-DSCHED='dynamic,1024'`, e reportar na tabela 8 do relatório.
-- [~] `default(none)` nas regiões paralelas relevantes
+- [x] `default(none)` nas regiões paralelas relevantes
   - [x] Região principal (linha 421): `default(none)` com cláusula `shared` explícita.
-  - [ ] O `parallel for` auxiliar (linha 371) não declara `default(none)`.
+  - [x] `parallel for` da contagem inicial (linha 371): `default(none) shared(total_celulas, grade)`.
+    A lista precisa de `grade` (acesso a `cobertura` e `estado_atual`) e de `total_celulas`; `T`
+    só aparece em `num_threads(T)`, avaliado fora da região, e as variáveis da `reduction` são
+    determinadas pela própria cláusula. Sem elas o gcc acusa `not specified in enclosing
+    parallel` — foi um dos erros do commit da main.
+  - Nota de sintaxe: a cláusula `default` **não** é aceita em `omp for` (só em `parallel`,
+    `teams` e `task`). Era o outro erro daquele commit.
   - Nota de portabilidade: `VIZINHOS` aparece em `shared(...)` e é `static const`. Isso é
     aceito a partir do OpenMP 5.0 (gcc ≥ 9, verificado no gcc 13.3), mas era **erro de
     compilação** em versões anteriores, em que variáveis `const` eram *predetermined shared*.
@@ -195,8 +201,7 @@ roda limpa sob `-fsanitize=address,undefined`.
    insumo da tabela 8 e da figura 3 do relatório.
 2. **Escrever o `Makefile`** (modelo no apêndice A do `relatorio.tex`).
 3. **Coletar os tempos** em máquina multicore e preencher as tabelas 5–8 e as figuras 1–3.
-4. Acrescentar `default(none)` ao `parallel for` auxiliar.
-5. **Decidir as flags de compilação do experimento**: com `-O2` (atual) o `simd` não tem efeito
+4. **Decidir as flags de compilação do experimento**: com `-O2` (atual) o `simd` não tem efeito
    nenhum; `-O3` e/ou `-march=native` fazem os laços vetorizarem. A escolha precisa ser
    registrada na tabela 4 do relatório, já que afeta os tempos e o speedup.
 

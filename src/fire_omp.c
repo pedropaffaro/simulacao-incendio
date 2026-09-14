@@ -368,7 +368,7 @@ int main(int argc, char *argv[]) {
     int queimadas          = 0;
     int contencao          = 0;
 
-    #pragma omp parallel for simd num_threads(T) schedule(static) \
+    #pragma omp parallel for simd num_threads(T) schedule(static) default(none) shared(total_celulas, grade) \
         reduction(+:total_combustiveis, celulas_em_chamas, nao_combustiveis, \
                   intactas, em_chamas, queimadas, contencao)
     for (long long i = 0; i < total_celulas; i++) {
