@@ -406,7 +406,7 @@ int main(int argc, char *argv[]) {
     int proximo_celulas_em_chamas = 0;
     int ignicoes_no_passo = 0;
     int total_ignicoes = 0;
-    int pico_passo = 0;
+    int pico_passo = -1;
     int pico_qtd = 0;
 
     // Contagens do próximo estado, zeradas a cada passo (equivalem a next_* em fire_seq.c).

@@ -86,12 +86,15 @@
 - [x] `total_ignicoes`: células intacta → em chamas durante a simulação (focos iniciais não contam)
 - [x] `pico_ignicoes`: maior quantidade de novas ignições por passo; empate → primeiro passo
   (comparação estrita `>` nas duas versões)
-- [ ] `pico_ignicoes: -1 0` se nenhuma ignição ocorreu — **DIVERGÊNCIA CONFIRMADA**
-  - `fire_seq.c` linha 442: `PICO pico = {-1, 0};` → imprime `-1 0`. Correto.
-  - `fire_omp.c` linha 409: `int pico_passo = 0;` → imprime `0 0`. **Incorreto.**
-  - Reproduzido: entrada 500×500, LIMIAR 400, 1 foco, nenhuma ignição →
-    `seq: pico_ignicoes: -1 0` vs. `omp: pico_ignicoes: 0 0`.
-  - **Correção:** `int pico_passo = -1;`
+- [x] `pico_ignicoes: -1 0` se nenhuma ignição ocorreu
+  - `fire_seq.c` linha 442: `PICO pico = {-1, 0};` → imprime `-1 0`.
+  - `fire_omp.c` linha 409: `int pico_passo = -1;` → imprime `-1 0`. Estava `0` até esta
+    correção, o que imprimia `0 0` e era a única divergência de *resultado* entre as versões.
+  - A comparação é estrita nas duas versões (`novos_incendios > pico.quantidade` no
+    sequencial, `ignicoes_no_passo > pico_qtd` na paralela), então empate mantém o primeiro
+    passo também quando existe ignição.
+  - Verificado nos casos sem nenhuma ignição (LIMIAR alto), com P = 0 e com F = 0, cada um
+    com T = 1, 4 e 8.
 - [x] `percentual_queimado = 100 * (queimadas + em_chamas) / combustiveis_iniciais`
 - [x] `percentual_protegido = 100 * contencao / combustiveis_iniciais`
 - [x] Ambos os percentuais = 0 se `combustiveis_iniciais == 0`
@@ -160,16 +163,20 @@
 |---|---|---|---|---|---|
 | E1 | 1000×1500 | 100 | 9 | 23 | **idêntico** (exceto tempo) |
 | E2 | 2000×2000 | 90 | 8 | 8 | **idêntico** (exceto tempo) |
-| E3 | 500×500 | 400 | 2 | 0 | **divergente** em `pico_ignicoes` (`-1 0` vs `0 0`) |
+| E3 | 500×500 | 400 | 2 | 0 | **idêntico** (exceto tempo), inclusive `pico_ignicoes: -1 0` |
 | E4 | 1000×1500 | 40 | 200 | 109 862 | **idêntico** (exceto tempo), inclusive com contenção ativa (8 526 células) |
+| E5 | 1200×1500 | 5000 | 4 | 0 | **idêntico** (exceto tempo) — nenhuma ignição, `pico_ignicoes: -1 0` |
+| E6 | 1200×1500 | 35 | 0 | 0 | **idêntico** (exceto tempo) — P = 0, nenhum passo executado |
+| E7 | 1200×1500 | 35 | 0 | 0 | **idêntico** (exceto tempo) — F = 0, nenhuma célula em chamas na inicialização |
 
 E4 também confirmou invariância a T (1, 2, 4, 8): mesmo `checksum` `5674319175939320070`.
 
-Re-verificado depois do alinhamento do trecho cronometrado: as 3 entradas de `tests/in` e as 3
-de `entrada_carga_*` continuam idênticas ao sequencial exceto pelo tempo, inclusive com o campo
-T da entrada variado em 1, 2, 4 e 8, e nos casos de borda P = 0, F = 0 e sem ignição (nestes
-dois últimos só o `pico_ignicoes` difere — pendência 1). `make test` passa 3/3 nas duas
-versões, e a versão paralela roda limpa sob `-fsanitize=address,undefined`.
+Re-verificado depois do alinhamento do trecho cronometrado e da correção do `pico_passo`: as 3
+entradas de `tests/in` e as 3 de `entrada_carga_*` continuam idênticas ao sequencial exceto pelo
+tempo, inclusive com o campo T da entrada variado em 1, 2, 4 e 8, e os casos de borda P = 0,
+F = 0 e sem ignição agora batem em **todos** os campos. Nenhuma divergência de resultado entre
+as versões permanece conhecida. `make test` passa 3/3 nas duas versões, e a versão paralela
+roda limpa sob `-fsanitize=address,undefined`.
 
 > Nenhuma medição de speedup foi feita: o contêiner de verificação tem **1 núcleo** (`nproc = 1`).
 > Os tempos precisam ser coletados na máquina de experimentos.
@@ -178,15 +185,13 @@ versões, e a versão paralela roda limpa sob `-fsanitize=address,undefined`.
 
 ## Pendências, em ordem de prioridade
 
-1. **Corrigir `pico_passo = -1`** em `fire_omp.c` linha 409. É a única divergência de
-   *resultado* entre as versões e viola explicitamente a seção 10 do enunciado.
-2. **Adicionar `simd`** em pelo menos um laço — requisito explícito da seção 13.
-3. **Parametrizar e comparar dois `schedule`** — requisito explícito da seção 13 e
+1. **Adicionar `simd`** em pelo menos um laço — requisito explícito da seção 13.
+2. **Parametrizar e comparar dois `schedule`** — requisito explícito da seção 13 e
    insumo da tabela 8 e da figura 3 do relatório.
-4. **Escrever o `Makefile`** (modelo no apêndice A do `relatorio.tex`).
-5. **Coletar os tempos** em máquina multicore e preencher as tabelas 5–8 e as figuras 1–3.
-6. Acrescentar `default(none)` ao `parallel for` auxiliar.
-7. Pendente: em `fire_omp.c` linha 498, `proximo_tempo[i] = tempo_atual[i]` (o sequencial usa `0`) — equivalente hoje porque
+3. **Escrever o `Makefile`** (modelo no apêndice A do `relatorio.tex`).
+4. **Coletar os tempos** em máquina multicore e preencher as tabelas 5–8 e as figuras 1–3.
+5. Acrescentar `default(none)` ao `parallel for` auxiliar.
+6. Pendente: em `fire_omp.c` linha 498, `proximo_tempo[i] = tempo_atual[i]` (o sequencial usa `0`) — equivalente hoje porque
    esses estados sempre têm tempo 0, mas é frágil; padronizar para `0`.
 
 ---
