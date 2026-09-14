@@ -365,7 +365,7 @@ int main(int argc, char *argv[]) {
     int total_combustiveis = 0;
     int celulas_em_chamas = 0;
     
-    #pragma omp parallel for num_threads(T) schedule(static) reduction(+:total_combustiveis, celulas_em_chamas)
+    #pragma omp parallel for num_threads(T) schedule(static) default(none) reduction(+:total_combustiveis, celulas_em_chamas)
     for (long long i = 0; i < total_celulas; i++) {
         COBERTURA_CODIGO cob = (COBERTURA_CODIGO)grade.cobertura[i];
         if (cob == COBERTURA_CODIGO_VEGETACAO || cob == COBERTURA_CODIGO_FLORESTA) {
@@ -391,7 +391,7 @@ int main(int argc, char *argv[]) {
     int proximo_celulas_em_chamas = 0;
     int ignicoes_no_passo = 0;
     int total_ignicoes = 0;
-    int pico_passo = 0;
+    int pico_passo = -1;
     int pico_qtd = 0;
 
     // Região Paralela Persistente
@@ -404,7 +404,7 @@ int main(int argc, char *argv[]) {
         while (passo_atual < P && celulas_em_chamas > 0) {
 
             // 1. Ativação das contenções
-            #pragma omp for schedule(static)
+            #pragma omp for schedule(static) default(none)
             for (long long i = 0; i < total_celulas; i++) {
                 if (grade.ativacao[i] == passo_atual && grade.estado_atual[i] == ESTADO_INTACTA) {
                     grade.estado_atual[i] = ESTADO_CONTENCAO;
@@ -412,7 +412,7 @@ int main(int argc, char *argv[]) {
             }
 
             // 2. Simulação, contagem de chamas e novas ignições
-            #pragma omp for collapse(2) schedule(static) reduction(+:proximo_celulas_em_chamas, ignicoes_no_passo)
+            #pragma omp for collapse(2) schedule(static) reduction(+:proximo_celulas_em_chamas, ignicoes_no_passo) default(none)
             for (int l = 0; l < L; l++) {
                 for (int c = 0; c < C; c++) {
                     long long i = (long long)l * C + c;
@@ -465,7 +465,7 @@ int main(int argc, char *argv[]) {
 
                     } else {
                         grade.proximo_estado[i] = estado_celula;
-                        grade.proximo_tempo[i]  = grade.tempo_atual[i];
+                        grade.proximo_tempo[i]  = 0;
                     }
                 }
             }
@@ -506,7 +506,7 @@ int main(int argc, char *argv[]) {
     int queimadas = 0;
     int contencao = 0;
 
-    #pragma omp parallel for num_threads(T) schedule(static) \
+    #pragma omp parallel for simd num_threads(T) schedule(static) default(none) \
         reduction(+:nao_combustiveis, intactas, em_chamas, queimadas, contencao)
     for (long long i = 0; i < total_celulas; i++) {
         ESTADO_CODIGO est = (ESTADO_CODIGO)grade.estado_atual[i];
