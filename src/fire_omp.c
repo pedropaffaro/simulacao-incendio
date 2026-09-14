@@ -398,30 +398,25 @@ int main(int argc, char *argv[]) {
     int init_combustiveis = 0, init_nao_combustiveis = 0, init_intactas = 0;
     int init_em_chamas = 0, init_queimadas = 0, init_contencao = 0;
 
-#pragma omp parallel for simd num_threads(T) schedule(static) default(none) shared(total_celulas, celulas)                                 \
+    #pragma omp parallel for num_threads(T) schedule(static) default(none) shared(total_celulas, celulas)                                 \
     reduction(+ : init_combustiveis, init_nao_combustiveis, init_intactas, init_em_chamas, init_queimadas, init_contencao)
     for (long long i = 0; i < total_celulas; i++) {
         COBERTURA_CODIGO cob = (COBERTURA_CODIGO)celulas.cobertura[i];
         if (cob == COBERTURA_CODIGO_VEGETACAO || cob == COBERTURA_CODIGO_FLORESTA) {
             init_combustiveis++;
         }
-        switch ((ESTADO_CODIGO)celulas.estado_atual[i]) {
-            case ESTADO_NAO_COMBUSTIVEL:
-                init_nao_combustiveis++;
-                break;
-            case ESTADO_INTACTA:
-                init_intactas++;
-                break;
-            case ESTADO_EM_CHAMAS:
-                init_em_chamas++;
-                break;
-            case ESTADO_QUEIMADA:
-                init_queimadas++;
-                break;
-            case ESTADO_CONTENCAO:
-                init_contencao++;
-                break;
-        }
+        
+        ESTADO_CODIGO est = celulas.estado_atual[i];
+        if (est == ESTADO_NAO_COMBUSTIVEL)
+            init_nao_combustiveis++;
+        else if (est == ESTADO_INTACTA)
+            init_intactas++;
+        else if (est == ESTADO_EM_CHAMAS)
+            init_em_chamas++;
+        else if (est == ESTADO_QUEIMADA)
+            init_queimadas++;
+        else if (est == ESTADO_CONTENCAO)
+            init_contencao++;
     }
 
     COUNTERS cnt = {
@@ -459,23 +454,22 @@ int main(int argc, char *argv[]) {
     int proximo_contencao        = 0;
 
 // Região Paralela Persistente
-#pragma omp parallel num_threads(T) default(none)                                                                                          \
-    shared(L, C, P, total_celulas, celulas, LIMIAR, passo_atual, cnt, pico, deslocamento_offset, pesos_direcao, VIZINHOS,                  \
-               proximo_celulas_em_chamas, ignicoes_no_passo, proximo_nao_combustiveis, proximo_intactas, proximo_queimadas,                \
+    #pragma omp parallel num_threads(T) default(none)  \
+    shared(L, C, P, total_celulas, celulas, LIMIAR, passo_atual, cnt, pico, deslocamento_offset, pesos_direcao, VIZINHOS,  \
+               proximo_celulas_em_chamas, ignicoes_no_passo, proximo_nao_combustiveis, proximo_intactas, proximo_queimadas, \
                proximo_contencao)
     {
         while (passo_atual < P && cnt.em_chamas > 0) {
-
-// Ativação das contenções
-#pragma omp for simd schedule(static)
-            for (long long i = 0; i < total_celulas; i++) {
-                if (celulas.ativacao[i] == passo_atual && celulas.estado_atual[i] == ESTADO_INTACTA) {
-                    celulas.estado_atual[i] = ESTADO_CONTENCAO;
+            // Ativação das contenções
+            #pragma omp for schedule(static)
+                for (long long i = 0; i < total_celulas; i++) {
+                    if (celulas.ativacao[i] == passo_atual && celulas.estado_atual[i] == ESTADO_INTACTA) {
+                        celulas.estado_atual[i] = ESTADO_CONTENCAO;
+                    }
                 }
-            }
 
-// Próximo estado e estatísticas
-#pragma omp for collapse(2) schedule(static) reduction(+ : proximo_celulas_em_chamas, ignicoes_no_passo, proximo_nao_combustiveis,         \
+            // Próximo estado e estatísticas
+            #pragma omp for collapse(2) schedule(static) reduction(+ : proximo_celulas_em_chamas, ignicoes_no_passo, proximo_nao_combustiveis,         \
                                                            proximo_intactas, proximo_queimadas, proximo_contencao)
             for (int l = 0; l < L; l++) {
                 for (int c = 0; c < C; c++) {
@@ -545,8 +539,8 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-// Troca de buffers e atualização de pico
-#pragma omp single
+            // Troca de buffers e atualização de pico
+            #pragma omp single
             {
                 int *estado_temporario = celulas.estado_atual;
                 celulas.estado_atual   = celulas.proximo_estado;
