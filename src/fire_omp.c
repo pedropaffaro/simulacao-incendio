@@ -359,20 +359,32 @@ int main(int argc, char *argv[]) {
 
     fclose(input);
 
-    // --- INÍCIO DA MEDIÇÃO DE TEMPO DA SIMULAÇÃO ---
-    double t_inicio = omp_get_wtime();
-
+    // --- CONTAGEM INICIAL (fora do trecho cronometrado, igual a fire_seq.c) ---
     int total_combustiveis = 0;
-    int celulas_em_chamas = 0;
-    
-    #pragma omp parallel for num_threads(T) schedule(static) reduction(+:total_combustiveis, celulas_em_chamas)
+    int celulas_em_chamas  = 0;
+    int nao_combustiveis   = 0;
+    int intactas           = 0;
+    int em_chamas          = 0;
+    int queimadas          = 0;
+    int contencao          = 0;
+
+    #pragma omp parallel for num_threads(T) schedule(static) \
+        reduction(+:total_combustiveis, celulas_em_chamas, nao_combustiveis, \
+                  intactas, em_chamas, queimadas, contencao)
     for (long long i = 0; i < total_celulas; i++) {
         COBERTURA_CODIGO cob = (COBERTURA_CODIGO)grade.cobertura[i];
         if (cob == COBERTURA_CODIGO_VEGETACAO || cob == COBERTURA_CODIGO_FLORESTA) {
             total_combustiveis++;
         }
-        if (grade.estado_atual[i] == ESTADO_EM_CHAMAS) {
-            celulas_em_chamas++;
+        switch ((ESTADO_CODIGO)grade.estado_atual[i]) {
+            case ESTADO_NAO_COMBUSTIVEL: nao_combustiveis++;  break;
+            case ESTADO_INTACTA:         intactas++;          break;
+            case ESTADO_EM_CHAMAS:
+                em_chamas++;
+                celulas_em_chamas++;
+                break;
+            case ESTADO_QUEIMADA:        queimadas++;         break;
+            case ESTADO_CONTENCAO:       contencao++;         break;
         }
     }
 
@@ -387,6 +399,9 @@ int main(int argc, char *argv[]) {
         pesos_direcao[k] = peso_vizinho(-variacao_linha, -variacao_coluna, vento_linha, vento_coluna, vento_intensidade);
     }
 
+    // --- INÍCIO DA MEDIÇÃO DE TEMPO DA SIMULAÇÃO ---
+    double t_inicio = omp_get_wtime();
+
     int passo_atual = 0;
     int proximo_celulas_em_chamas = 0;
     int ignicoes_no_passo = 0;
@@ -394,12 +409,22 @@ int main(int argc, char *argv[]) {
     int pico_passo = 0;
     int pico_qtd = 0;
 
+    // Contagens do próximo estado, zeradas a cada passo (equivalem a next_* em fire_seq.c).
+    // O reduction de um omp for combina com o valor anterior do item original, por isso
+    // esses acumuladores precisam ser zerados após serem copiados para as estatísticas finais.
+    int proximo_nao_combustiveis = 0;
+    int proximo_intactas         = 0;
+    int proximo_queimadas        = 0;
+    int proximo_contencao        = 0;
+
     // Região Paralela Persistente
     #pragma omp parallel num_threads(T) default(none) \
         shared(L, C, P, total_celulas, grade, LIMIAR, passo_atual, \
                celulas_em_chamas, proximo_celulas_em_chamas, \
                deslocamento_offset, pesos_direcao, VIZINHOS, \
-               ignicoes_no_passo, total_ignicoes, pico_passo, pico_qtd)
+               ignicoes_no_passo, total_ignicoes, pico_passo, pico_qtd, \
+               nao_combustiveis, intactas, em_chamas, queimadas, contencao, \
+               proximo_nao_combustiveis, proximo_intactas, proximo_queimadas, proximo_contencao)
     {
         while (passo_atual < P && celulas_em_chamas > 0) {
 
@@ -411,8 +436,11 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            // 2. Simulação, contagem de chamas e novas ignições
-            #pragma omp for collapse(2) schedule(static) reduction(+:proximo_celulas_em_chamas, ignicoes_no_passo)
+            // 2. Simulação, contagem do próximo estado e novas ignições
+            #pragma omp for collapse(2) schedule(static) \
+                reduction(+:proximo_celulas_em_chamas, ignicoes_no_passo, \
+                          proximo_nao_combustiveis, proximo_intactas, \
+                          proximo_queimadas, proximo_contencao)
             for (int l = 0; l < L; l++) {
                 for (int c = 0; c < C; c++) {
                     long long i = (long long)l * C + c;
@@ -449,6 +477,7 @@ int main(int argc, char *argv[]) {
                         } else {
                             grade.proximo_estado[i] = ESTADO_INTACTA;
                             grade.proximo_tempo[i]  = 0;
+                            proximo_intactas++;
                         }
 
                     } else if (estado_celula == ESTADO_EM_CHAMAS) {
@@ -457,6 +486,7 @@ int main(int argc, char *argv[]) {
                         if (tempo_ignicao_restante == 0) {
                             grade.proximo_estado[i] = ESTADO_QUEIMADA;
                             grade.proximo_tempo[i]  = 0;
+                            proximo_queimadas++;
                         } else {
                             grade.proximo_estado[i] = ESTADO_EM_CHAMAS;
                             grade.proximo_tempo[i]  = tempo_ignicao_restante;
@@ -466,6 +496,13 @@ int main(int argc, char *argv[]) {
                     } else {
                         grade.proximo_estado[i] = estado_celula;
                         grade.proximo_tempo[i]  = grade.tempo_atual[i];
+
+                        switch (estado_celula) {
+                            case ESTADO_NAO_COMBUSTIVEL: proximo_nao_combustiveis++; break;
+                            case ESTADO_QUEIMADA:        proximo_queimadas++;        break;
+                            case ESTADO_CONTENCAO:       proximo_contencao++;        break;
+                            default:                                                 break;
+                        }
                     }
                 }
             }
@@ -481,8 +518,19 @@ int main(int argc, char *argv[]) {
                 grade.tempo_atual = grade.proximo_tempo;
                 grade.proximo_tempo = tempo_temporario;
 
+                // Estatísticas do próximo estado (equivalentes às de fire_seq.c)
                 celulas_em_chamas = proximo_celulas_em_chamas;
+                em_chamas         = proximo_celulas_em_chamas;
+                nao_combustiveis  = proximo_nao_combustiveis;
+                intactas          = proximo_intactas;
+                queimadas         = proximo_queimadas;
+                contencao         = proximo_contencao;
+
                 proximo_celulas_em_chamas = 0;
+                proximo_nao_combustiveis  = 0;
+                proximo_intactas          = 0;
+                proximo_queimadas         = 0;
+                proximo_contencao         = 0;
 
                 total_ignicoes += ignicoes_no_passo;
                 if (ignicoes_no_passo > pico_qtd) {
@@ -499,24 +547,7 @@ int main(int argc, char *argv[]) {
     double t_fim = omp_get_wtime();
     double tempo_execucao = t_fim - t_inicio;
 
-    // --- CONTAGEM DOS ESTADOS FINAIS E CHECKSUM ---
-    int nao_combustiveis = 0;
-    int intactas = 0;
-    int em_chamas = 0;
-    int queimadas = 0;
-    int contencao = 0;
-
-    #pragma omp parallel for num_threads(T) schedule(static) \
-        reduction(+:nao_combustiveis, intactas, em_chamas, queimadas, contencao)
-    for (long long i = 0; i < total_celulas; i++) {
-        ESTADO_CODIGO est = (ESTADO_CODIGO)grade.estado_atual[i];
-        if (est == ESTADO_NAO_COMBUSTIVEL) nao_combustiveis++;
-        else if (est == ESTADO_INTACTA) intactas++;
-        else if (est == ESTADO_EM_CHAMAS) em_chamas++;
-        else if (est == ESTADO_QUEIMADA) queimadas++;
-        else if (est == ESTADO_CONTENCAO) contencao++;
-    }
-
+    // --- CHECKSUM (fora do trecho cronometrado) ---
     double pct_queimado  = percentual_queimado(queimadas, em_chamas, total_combustiveis);
     double pct_protegido = percentual_protegido(contencao, total_combustiveis);
     unsigned long long checksum = 0;
