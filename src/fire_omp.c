@@ -368,7 +368,7 @@ int main(int argc, char *argv[]) {
     int queimadas          = 0;
     int contencao          = 0;
 
-    #pragma omp parallel for num_threads(T) schedule(static) \
+    #pragma omp parallel for simd num_threads(T) schedule(static) \
         reduction(+:total_combustiveis, celulas_em_chamas, nao_combustiveis, \
                   intactas, em_chamas, queimadas, contencao)
     for (long long i = 0; i < total_celulas; i++) {
@@ -429,7 +429,7 @@ int main(int argc, char *argv[]) {
         while (passo_atual < P && celulas_em_chamas > 0) {
 
             // 1. Ativação das contenções
-            #pragma omp for schedule(static)
+            #pragma omp for simd schedule(static)
             for (long long i = 0; i < total_celulas; i++) {
                 if (grade.ativacao[i] == passo_atual && grade.estado_atual[i] == ESTADO_INTACTA) {
                     grade.estado_atual[i] = ESTADO_CONTENCAO;

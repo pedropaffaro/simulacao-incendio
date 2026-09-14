@@ -135,11 +135,17 @@
 - [x] Região paralela persistente (não abrir/fechar a cada passo) — aberta na linha 421, `while` dos passos dentro dela
 - [x] Ativação de zonas paralelizada — `omp for schedule(static)` (linhas 432–437)
 - [x] Atualização da matriz paralelizada com `omp for` — `omp for collapse(2)` (linha 440)
-- [ ] `simd` aplicado onde pertinente — **nenhuma diretiva `simd` no arquivo**
-  - Candidatos naturais: o laço de ativação das zonas (linhas 432–437) e os laços de contagem
-    (a varredura inicial das linhas 374–389 e as contagens dentro do laço principal), que são
-    varreduras lineares sem acesso indireto.
-    Sugestão: `#pragma omp for simd schedule(static)`.
+- [x] `simd` aplicado onde pertinente — nos dois laços de varredura linear do arquivo:
+  - contagem inicial: `#pragma omp parallel for simd` (linha 371);
+  - ativação das zonas: `#pragma omp for simd schedule(static)` (linha 432), que é uma
+    varredura linear com store condicional, sem dependência entre iterações.
+  - O laço de propagação ficou **de fora**: o acesso aos vizinhos é indireto
+    (`deslocamento_offset`/`pesos_direcao`) e há desvios por estado, então o vetorizador
+    recusa (`missed: not vectorized: control flow in loop`).
+  - Efeito conferido com `-fopt-info-vec-optimized`: com as flags do `Makefile` (`-O2`) nenhum
+    laço vetoriza e o `simd` fica sem efeito prático; com `-O2 -march=native` o laço de ativação
+    vetoriza (32 B); com `-O3` o da contagem inicial (16 B); com `-O3 -march=native` os dois
+    (32 B). Em todos esses conjuntos de flags a saída segue idêntica à do sequencial.
 - [x] Reduções para contadores (sem `critical`/`atomic` no laço principal) — `reduction(+:...)` nas linhas 371 e 440; nenhum `critical`/`atomic` no código
 - [x] Troca de matrizes sem condição de corrida — dentro de `omp single` (linhas 511–543), com barreira implícita antes (fim do `omp for`) e depois (fim do `single`)
 - [x] Condição de parada compartilhada corretamente — `passo_atual` e `celulas_em_chamas` atualizados no `single`; a barreira implícita do `single` implica *flush*, então todas as threads reavaliam o `while` com os mesmos valores
@@ -185,14 +191,14 @@ roda limpa sob `-fsanitize=address,undefined`.
 
 ## Pendências, em ordem de prioridade
 
-1. **Adicionar `simd`** em pelo menos um laço — requisito explícito da seção 13.
-2. **Parametrizar e comparar dois `schedule`** — requisito explícito da seção 13 e
+1. **Parametrizar e comparar dois `schedule`** — requisito explícito da seção 13 e
    insumo da tabela 8 e da figura 3 do relatório.
-3. **Escrever o `Makefile`** (modelo no apêndice A do `relatorio.tex`).
-4. **Coletar os tempos** em máquina multicore e preencher as tabelas 5–8 e as figuras 1–3.
-5. Acrescentar `default(none)` ao `parallel for` auxiliar.
-6. Pendente: em `fire_omp.c` linha 498, `proximo_tempo[i] = tempo_atual[i]` (o sequencial usa `0`) — equivalente hoje porque
-   esses estados sempre têm tempo 0, mas é frágil; padronizar para `0`.
+2. **Escrever o `Makefile`** (modelo no apêndice A do `relatorio.tex`).
+3. **Coletar os tempos** em máquina multicore e preencher as tabelas 5–8 e as figuras 1–3.
+4. Acrescentar `default(none)` ao `parallel for` auxiliar.
+5. **Decidir as flags de compilação do experimento**: com `-O2` (atual) o `simd` não tem efeito
+   nenhum; `-O3` e/ou `-march=native` fazem os laços vetorizarem. A escolha precisa ser
+   registrada na tabela 4 do relatório, já que afeta os tempos e o speedup.
 
 ---
 
