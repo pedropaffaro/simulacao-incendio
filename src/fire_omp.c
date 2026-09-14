@@ -368,7 +368,7 @@ int main(int argc, char *argv[]) {
     int queimadas          = 0;
     int contencao          = 0;
 
-    #pragma omp parallel for simd num_threads(T) schedule(static) default(none) shared(total_celulas, grade) \
+    #pragma omp parallel for num_threads(T) schedule(static) default(none) shared(total_celulas, grade) \
         reduction(+:total_combustiveis, celulas_em_chamas, nao_combustiveis, \
                   intactas, em_chamas, queimadas, contencao)
     for (long long i = 0; i < total_celulas; i++) {
@@ -376,15 +376,20 @@ int main(int argc, char *argv[]) {
         if (cob == COBERTURA_CODIGO_VEGETACAO || cob == COBERTURA_CODIGO_FLORESTA) {
             total_combustiveis++;
         }
-        switch ((ESTADO_CODIGO)grade.estado_atual[i]) {
-            case ESTADO_NAO_COMBUSTIVEL: nao_combustiveis++;  break;
-            case ESTADO_INTACTA:         intactas++;          break;
-            case ESTADO_EM_CHAMAS:
-                em_chamas++;
-                celulas_em_chamas++;
-                break;
-            case ESTADO_QUEIMADA:        queimadas++;         break;
-            case ESTADO_CONTENCAO:       contencao++;         break;
+
+        ESTADO_CODIGO est = (ESTADO_CODIGO)grade.estado_atual[i];
+
+        if (est == ESTADO_NAO_COMBUSTIVEL) {
+            nao_combustiveis++;
+        } else if (est == ESTADO_INTACTA) {
+            intactas++;
+        } else if (est == ESTADO_EM_CHAMAS) {
+            em_chamas++;
+            celulas_em_chamas++;
+        } else if (est == ESTADO_QUEIMADA) {
+            queimadas++;
+        } else if (est == ESTADO_CONTENCAO) {
+            contencao++;
         }
     }
 
@@ -450,10 +455,10 @@ int main(int argc, char *argv[]) {
                         int S = 0;
 
                         if (l > 0 && l < L - 1 && c > 0 && c < C - 1) {
+                            #pragma omp simd reduction(+:S)
                             for (int k = 0; k < 8; k++) {
-                                if (grade.estado_atual[i + deslocamento_offset[k]] == ESTADO_EM_CHAMAS) {
-                                    S += pesos_direcao[k];
-                                }
+                                int atual_em_chamas = (grade.estado_atual[i + deslocamento_offset[k]] == ESTADO_EM_CHAMAS);
+                                S += pesos_direcao[k] * atual_em_chamas;
                             }
                         } else {
                             for (int k = 0; k < 8; k++) {
@@ -497,11 +502,12 @@ int main(int argc, char *argv[]) {
                         grade.proximo_estado[i] = estado_celula;
                         grade.proximo_tempo[i]  = 0;
 
-                        switch (estado_celula) {
-                            case ESTADO_NAO_COMBUSTIVEL: proximo_nao_combustiveis++; break;
-                            case ESTADO_QUEIMADA:        proximo_queimadas++;        break;
-                            case ESTADO_CONTENCAO:       proximo_contencao++;        break;
-                            default:                                                 break;
+                        if (estado_celula == ESTADO_NAO_COMBUSTIVEL) {
+                            proximo_nao_combustiveis++;
+                        } else if (estado_celula == ESTADO_QUEIMADA) {
+                            proximo_queimadas++;
+                        } else if (estado_celula == ESTADO_CONTENCAO) {
+                            proximo_contencao++;
                         }
                     }
                 }
