@@ -1,4 +1,8 @@
 #define _POSIX_C_SOURCE 200112L
+#include <omp.h>
+#include <stdio.h>
+#include <stdlib.h>
+
 typedef struct {
     int vertical;
     int horizontal;
@@ -22,12 +26,7 @@ static const DIRECAO VIZINHOS[8] = {
 };
 // clang-format on
 
-typedef enum {
-    COBERTURA_CODIGO_AGUA = 0,
-    COBERTURA_CODIGO_SOLO,
-    COBERTURA_CODIGO_VEGETACAO,
-    COBERTURA_CODIGO_FLORESTA
-} COBERTURA_CODIGO;
+typedef enum { COBERTURA_CODIGO_AGUA = 0, COBERTURA_CODIGO_SOLO, COBERTURA_CODIGO_VEGETACAO, COBERTURA_CODIGO_FLORESTA } COBERTURA_CODIGO;
 
 /* Geração da cobertura (rand % 100) */
 // clang-format off
@@ -43,13 +42,7 @@ typedef enum {
 #define FATOR_RASTEIRA 8
 #define FATOR_FLORESTA 12
 
-typedef enum {
-    ESTADO_NAO_COMBUSTIVEL = 0,
-    ESTADO_INTACTA,
-    ESTADO_EM_CHAMAS,
-    ESTADO_QUEIMADA,
-    ESTADO_CONTENCAO
-} ESTADO_CODIGO;
+typedef enum { ESTADO_NAO_COMBUSTIVEL = 0, ESTADO_INTACTA, ESTADO_EM_CHAMAS, ESTADO_QUEIMADA, ESTADO_CONTENCAO } ESTADO_CODIGO;
 
 /* Tempos iniciais de queima (em passos) */
 #define TEMPO_QUEIMA_RASTEIRA 2
@@ -86,11 +79,7 @@ typedef struct {
     int *ativacao;
 } CELULAS;
 
-typedef enum {
-    LEITURA_OK = 0,
-    LEITURA_ERRO_SISTEMA,
-    LEITURA_ERRO_ENTRADA
-} LEITURA_STATUS;
+typedef enum { LEITURA_OK = 0, LEITURA_ERRO_SISTEMA, LEITURA_ERRO_ENTRADA } LEITURA_STATUS;
 
 typedef struct {
     int passo;
@@ -111,11 +100,6 @@ typedef struct {
     int linha;
     int coluna;
 } COORDENADA;
-
-#include <omp.h>
-#include <stdio.h>
-#include <stdlib.h>
-
 
 COORDENADA get_coordenada(long long idx, int C) {
     COORDENADA coord;
@@ -339,7 +323,7 @@ LEITURA_STATUS ler_zonas_contencao(FILE *input, int num_zonas, int L, int C, int
 }
 
 void print_data(COUNTERS cnt, int passo_atual, PICO pico, double pct_queimado, double pct_protegido, unsigned long long checksum,
-                       double tempo) {
+                double tempo) {
     printf("passos: %d\n", passo_atual);
     printf("nao_combustiveis: %d\n", cnt.nao_combustiveis);
     printf("intactas: %d\n", cnt.intactas);
@@ -450,8 +434,7 @@ int main(int argc, char *argv[]) {
                 celulas.estado_atual[i] = estado_apos_ativacao(celulas.estado_atual[i]);
         }
 
-        // Calcular próximo estado de todas as células
-        // Calcular estatísticas do próximo estado
+        // Próximo estado e estatísticas
         int novos_incendios = 0;
         int next_nao_comb = 0, next_intactas = 0, next_em_chamas = 0;
         int next_queimadas = 0, next_contencao = 0;
@@ -553,12 +536,10 @@ int main(int argc, char *argv[]) {
         celulas.tempo_atual    = celulas.proximo_tempo;
         celulas.proximo_tempo  = tmp;
 
-        // Atualizar condição de parada
-        cnt.em_chamas = next_em_chamas;
         passo_atual++;
     }
 
-    double tempo = omp_get_wtime() - t_inicio;
+    double tempo_execucao = omp_get_wtime() - t_inicio;
 
     // Checksum
     unsigned long long checksum = 0;
@@ -573,7 +554,7 @@ int main(int argc, char *argv[]) {
 
     liberar_cels(&celulas);
 
-    print_data(cnt, passo_atual, pico, pct_queimado, pct_protegido, checksum, tempo);
+    print_data(cnt, passo_atual, pico, pct_queimado, pct_protegido, checksum, tempo_execucao);
 
     return EXIT_SUCCESS;
 }
