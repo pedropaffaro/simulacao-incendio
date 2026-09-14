@@ -199,9 +199,8 @@ roda limpa sob `-fsanitize=address,undefined`.
 
 1. **Parametrizar e comparar dois `schedule`** — requisito explícito da seção 13 e
    insumo da tabela 8 e da figura 3 do relatório.
-2. **Escrever o `Makefile`** (modelo no apêndice A do `relatorio.tex`).
-3. **Coletar os tempos** em máquina multicore e preencher as tabelas 5–8 e as figuras 1–3.
-4. **Decidir as flags de compilação do experimento**: com `-O2` (atual) o `simd` não tem efeito
+2. **Coletar os tempos** em máquina multicore e preencher as tabelas 5–8 e as figuras 1–3.
+3. **Decidir as flags de compilação do experimento**: com `-O2` (atual) o `simd` não tem efeito
    nenhum; `-O3` e/ou `-march=native` fazem os laços vetorizarem. A escolha precisa ser
    registrada na tabela 4 do relatório, já que afeta os tempos e o speedup.
 

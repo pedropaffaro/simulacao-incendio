@@ -1,7 +1,7 @@
 #define _POSIX_C_SOURCE 200112L
+#include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <omp.h>
 
 typedef struct {
     int vertical;
@@ -26,12 +26,7 @@ static const DIRECAO VIZINHOS[8] = {
 };
 // clang-format on
 
-typedef enum {
-    COBERTURA_CODIGO_AGUA = 0,
-    COBERTURA_CODIGO_SOLO,
-    COBERTURA_CODIGO_VEGETACAO,
-    COBERTURA_CODIGO_FLORESTA
-} COBERTURA_CODIGO;
+typedef enum { COBERTURA_CODIGO_AGUA = 0, COBERTURA_CODIGO_SOLO, COBERTURA_CODIGO_VEGETACAO, COBERTURA_CODIGO_FLORESTA } COBERTURA_CODIGO;
 
 /* Geração da cobertura (rand % 100) */
 // clang-format off
@@ -47,13 +42,7 @@ typedef enum {
 #define FATOR_RASTEIRA 8
 #define FATOR_FLORESTA 12
 
-typedef enum {
-    ESTADO_NAO_COMBUSTIVEL = 0,
-    ESTADO_INTACTA,
-    ESTADO_EM_CHAMAS,
-    ESTADO_QUEIMADA,
-    ESTADO_CONTENCAO
-} ESTADO_CODIGO;
+typedef enum { ESTADO_NAO_COMBUSTIVEL = 0, ESTADO_INTACTA, ESTADO_EM_CHAMAS, ESTADO_QUEIMADA, ESTADO_CONTENCAO } ESTADO_CODIGO;
 
 /* Tempos iniciais de queima (em passos) */
 #define TEMPO_QUEIMA_RASTEIRA 2
@@ -90,11 +79,38 @@ typedef struct {
     int *ativacao;
 } CELULAS;
 
-typedef enum {
-    LEITURA_OK = 0,
-    LEITURA_ERRO_SISTEMA,
-    LEITURA_ERRO_ENTRADA
-} LEITURA_STATUS;
+typedef enum { LEITURA_OK = 0, LEITURA_ERRO_SISTEMA, LEITURA_ERRO_ENTRADA } LEITURA_STATUS;
+
+typedef struct {
+    int passo;
+    int quantidade;
+} PICO;
+
+typedef struct {
+    int combustiveis_iniciais;
+    int nao_combustiveis;
+    int intactas;
+    int em_chamas;
+    int queimadas;
+    int contencao;
+    int total_ignicoes;
+} COUNTERS;
+
+typedef struct {
+    int linha;
+    int coluna;
+} COORDENADA;
+
+COORDENADA get_coordenada(long long idx, int C) {
+    COORDENADA coord;
+    coord.linha  = (int)(idx / C);
+    coord.coluna = (int)(idx % C);
+    return coord;
+}
+
+long long int get_idx(COORDENADA coord, int C) {
+    return (long long)coord.linha * C + coord.coluna;
+}
 
 ESTADO_CODIGO estado_apos_ativacao(ESTADO_CODIGO estado) {
     switch (estado) {
@@ -155,8 +171,8 @@ double percentual_protegido(int contencoes, int combustiveis_iniciais) {
     return (100.0 * contencoes) / combustiveis_iniciais;
 }
 
-int alocar_grade(CELULAS *g, long long total_celulas) {
-    *g = (CELULAS){0};
+int alocar_cels(CELULAS *g, long long total_celulas) {
+    *g                = (CELULAS){0};
     g->cobertura      = malloc(total_celulas * sizeof(int));
     g->umidade        = malloc(total_celulas * sizeof(int));
     g->estado_atual   = malloc(total_celulas * sizeof(int));
@@ -164,15 +180,14 @@ int alocar_grade(CELULAS *g, long long total_celulas) {
     g->proximo_estado = malloc(total_celulas * sizeof(int));
     g->proximo_tempo  = malloc(total_celulas * sizeof(int));
     g->ativacao       = malloc(total_celulas * sizeof(int));
-    if (!g->cobertura || !g->umidade || !g->estado_atual || !g->tempo_atual ||
-        !g->proximo_estado || !g->proximo_tempo || !g->ativacao) {
+    if (!g->cobertura || !g->umidade || !g->estado_atual || !g->tempo_atual || !g->proximo_estado || !g->proximo_tempo || !g->ativacao) {
         fprintf(stderr, "[Erro] Não foi possível alocar memoria para as estruturas da matriz.\n");
         return 0;
     }
     return 1;
 }
 
-void liberar_grade(CELULAS *g) {
+void liberar_cels(CELULAS *g) {
     free(g->cobertura);
     free(g->umidade);
     free(g->estado_atual);
@@ -236,9 +251,7 @@ LEITURA_STATUS ler_config_vento(FILE *input, int *vento_linha, int *vento_coluna
         fprintf(stderr, "[Erro] Não foi possível ler a configuração do vento.\n");
         return LEITURA_ERRO_SISTEMA;
     }
-    if (*vento_linha < -1 || *vento_linha > 1 ||
-        *vento_coluna < -1 || *vento_coluna > 1 ||
-        (*vento_linha == 0 && *vento_coluna == 0) ||
+    if (*vento_linha < -1 || *vento_linha > 1 || *vento_coluna < -1 || *vento_coluna > 1 || (*vento_linha == 0 && *vento_coluna == 0) ||
         *vento_intensidade < INTENSIDADE_MIN || *vento_intensidade > INTENSIDADE_MAX) {
         fprintf(stderr, "[Erro] Os valores inseridos para configuração do vento são inválidos.\n");
         return LEITURA_ERRO_ENTRADA;
@@ -279,7 +292,7 @@ LEITURA_STATUS ler_focos(FILE *input, int F, int L, int C, int *cobertura, int *
             return LEITURA_ERRO_ENTRADA;
         }
         estado_atual[idx] = ESTADO_EM_CHAMAS;
-        tempo_atual[idx] = tempo_queima_inicial(cobertura[idx]);
+        tempo_atual[idx]  = tempo_queima_inicial(cobertura[idx]);
     }
     return LEITURA_OK;
 }
@@ -291,13 +304,9 @@ LEITURA_STATUS ler_zonas_contencao(FILE *input, int num_zonas, int L, int C, int
             fprintf(stderr, "[Erro] Não foi possível ler a zona de contenção %d.\n", k + 1);
             return LEITURA_ERRO_SISTEMA;
         }
-        if (passo_ativacao < 0 || passo_ativacao >= P ||
-            linha_inicial < 0 || linha_inicial >= L ||
-            coluna_inicial < 0 || coluna_inicial >= C ||
-            linha_final < 0 || linha_final >= L ||
-            coluna_final < 0 || coluna_final >= C ||
-            linha_inicial > linha_final ||
-            coluna_inicial > coluna_final) {
+        if (passo_ativacao < 0 || passo_ativacao >= P || linha_inicial < 0 || linha_inicial >= L || coluna_inicial < 0 ||
+            coluna_inicial >= C || linha_final < 0 || linha_final >= L || coluna_final < 0 || coluna_final >= C ||
+            linha_inicial > linha_final || coluna_inicial > coluna_final) {
             fprintf(stderr, "[Erro] Os valores inseridos para contenção são inválidos.\n");
             return LEITURA_ERRO_ENTRADA;
         }
@@ -312,146 +321,173 @@ LEITURA_STATUS ler_zonas_contencao(FILE *input, int num_zonas, int L, int C, int
     return LEITURA_OK;
 }
 
-int main(int argc, char *argv[]) {
-    if (validar_argc(argc, argv[0]) != LEITURA_OK) return EXIT_FAILURE;
+void print_data(COUNTERS cnt, int passo_atual, PICO pico, double pct_queimado, double pct_protegido, unsigned long long checksum,
+                double tempo) {
+    printf("passos: %d\n", passo_atual);
+    printf("nao_combustiveis: %d\n", cnt.nao_combustiveis);
+    printf("intactas: %d\n", cnt.intactas);
+    printf("em_chamas: %d\n", cnt.em_chamas);
+    printf("queimadas: %d\n", cnt.queimadas);
+    printf("contencao: %d\n", cnt.contencao);
+    printf("total_ignicoes: %d\n", cnt.total_ignicoes);
+    printf("pico_ignicoes: %d %d\n", pico.passo, pico.quantidade);
+    printf("percentual_queimado: %.2f\n", pct_queimado);
+    printf("percentual_protegido: %.2f\n", pct_protegido);
+    printf("checksum: %llu\n", checksum);
+    printf("tempo: %.6f\n", tempo);
+}
 
-    FILE *input = abrir_arquivo(argv[1]);
-    if (input == NULL) return EXIT_FAILURE;
+int main(int argc, char *argv[]) {
+    if (validar_argc(argc, argv[0]) != LEITURA_OK)
+        return EXIT_FAILURE;
+
+    FILE *input = abrir_arquivo(argv[argc - 1]);
+    if (input == NULL)
+        return EXIT_FAILURE;
 
     int L, C, P, T, LIMIAR;
     unsigned int seed;
-    LEITURA_STATUS stats;
+    LEITURA_STATUS status;
 
-    stats = ler_config_geral(input, &L, &C, &P, &T, &seed, &LIMIAR);
-    if (stats != LEITURA_OK) { fclose(input); return EXIT_FAILURE; }
+    status = ler_config_geral(input, &L, &C, &P, &T, &seed, &LIMIAR);
+    if (status != LEITURA_OK) {
+        fclose(input);
+        return EXIT_FAILURE;
+    }
 
     int vento_linha, vento_coluna, vento_intensidade;
-    stats = ler_config_vento(input, &vento_linha, &vento_coluna, &vento_intensidade);
-    if (stats != LEITURA_OK) { fclose(input); return EXIT_FAILURE; }
+    status = ler_config_vento(input, &vento_linha, &vento_coluna, &vento_intensidade);
+    if (status != LEITURA_OK) {
+        fclose(input);
+        return EXIT_FAILURE;
+    }
 
-    int F, num_zonas_contencao;
-    stats = ler_contagem_focos_zonas(input, &F, &num_zonas_contencao);
-    if (stats != LEITURA_OK) { fclose(input); return EXIT_FAILURE; }
+    int F, num_zonas;
+    status = ler_contagem_focos_zonas(input, &F, &num_zonas);
+    if (status != LEITURA_OK) {
+        fclose(input);
+        return EXIT_FAILURE;
+    }
 
     long long total_celulas = (long long)L * C;
-    CELULAS grade;
-    if (!alocar_grade(&grade, total_celulas)) {
+    CELULAS celulas;
+    if (!alocar_cels(&celulas, total_celulas)) {
         fclose(input);
-        liberar_grade(&grade);
+        liberar_cels(&celulas);
         return EXIT_FAILURE;
     }
 
-    gerar_terreno(&grade, total_celulas, seed);
+    gerar_terreno(&celulas, total_celulas, seed);
 
-    stats = ler_focos(input, F, L, C, grade.cobertura, grade.estado_atual, grade.tempo_atual);
-    if (stats != LEITURA_OK) {
+    status = ler_focos(input, F, L, C, celulas.cobertura, celulas.estado_atual, celulas.tempo_atual);
+    if (status != LEITURA_OK) {
         fclose(input);
-        liberar_grade(&grade);
+        liberar_cels(&celulas);
         return EXIT_FAILURE;
     }
 
-    stats = ler_zonas_contencao(input, num_zonas_contencao, L, C, P, grade.ativacao);
-    if (stats != LEITURA_OK) {
+    status = ler_zonas_contencao(input, num_zonas, L, C, P, celulas.ativacao);
+    if (status != LEITURA_OK) {
         fclose(input);
-        liberar_grade(&grade);
+        liberar_cels(&celulas);
         return EXIT_FAILURE;
     }
 
     fclose(input);
 
-    // --- CONTAGEM INICIAL (fora do trecho cronometrado, igual a fire_seq.c) ---
-    int total_combustiveis = 0;
-    int celulas_em_chamas  = 0;
-    int nao_combustiveis   = 0;
-    int intactas           = 0;
-    int em_chamas          = 0;
-    int queimadas          = 0;
-    int contencao          = 0;
+    int init_combustiveis = 0, init_nao_combustiveis = 0, init_intactas = 0;
+    int init_em_chamas = 0, init_queimadas = 0, init_contencao = 0;
 
-    #pragma omp parallel for simd num_threads(T) schedule(static) default(none) shared(total_celulas, grade) \
-        reduction(+:total_combustiveis, celulas_em_chamas, nao_combustiveis, \
-                  intactas, em_chamas, queimadas, contencao)
+#pragma omp parallel for simd num_threads(T) schedule(static) default(none) shared(total_celulas, celulas)                                 \
+    reduction(+ : init_combustiveis, init_nao_combustiveis, init_intactas, init_em_chamas, init_queimadas, init_contencao)
     for (long long i = 0; i < total_celulas; i++) {
-        COBERTURA_CODIGO cob = (COBERTURA_CODIGO)grade.cobertura[i];
+        COBERTURA_CODIGO cob = (COBERTURA_CODIGO)celulas.cobertura[i];
         if (cob == COBERTURA_CODIGO_VEGETACAO || cob == COBERTURA_CODIGO_FLORESTA) {
-            total_combustiveis++;
+            init_combustiveis++;
         }
-        switch ((ESTADO_CODIGO)grade.estado_atual[i]) {
-            case ESTADO_NAO_COMBUSTIVEL: nao_combustiveis++;  break;
-            case ESTADO_INTACTA:         intactas++;          break;
-            case ESTADO_EM_CHAMAS:
-                em_chamas++;
-                celulas_em_chamas++;
+        switch ((ESTADO_CODIGO)celulas.estado_atual[i]) {
+            case ESTADO_NAO_COMBUSTIVEL:
+                init_nao_combustiveis++;
                 break;
-            case ESTADO_QUEIMADA:        queimadas++;         break;
-            case ESTADO_CONTENCAO:       contencao++;         break;
+            case ESTADO_INTACTA:
+                init_intactas++;
+                break;
+            case ESTADO_EM_CHAMAS:
+                init_em_chamas++;
+                break;
+            case ESTADO_QUEIMADA:
+                init_queimadas++;
+                break;
+            case ESTADO_CONTENCAO:
+                init_contencao++;
+                break;
         }
     }
+
+    COUNTERS cnt = {
+        .combustiveis_iniciais = init_combustiveis,
+        .nao_combustiveis      = init_nao_combustiveis,
+        .intactas              = init_intactas,
+        .em_chamas             = init_em_chamas,
+        .queimadas             = init_queimadas,
+        .contencao             = init_contencao,
+        .total_ignicoes        = 0
+    };
+    PICO pico = {-1, 0};
 
     long long deslocamento_offset[8];
     int pesos_direcao[8];
 
     for (int k = 0; k < 8; k++) {
-        int variacao_linha = VIZINHOS[k].vertical;
+        int variacao_linha  = VIZINHOS[k].vertical;
         int variacao_coluna = VIZINHOS[k].horizontal;
 
         deslocamento_offset[k] = (long long)variacao_linha * C + variacao_coluna;
-        pesos_direcao[k] = peso_vizinho(-variacao_linha, -variacao_coluna, vento_linha, vento_coluna, vento_intensidade);
+        pesos_direcao[k]       = peso_vizinho(-variacao_linha, -variacao_coluna, vento_linha, vento_coluna, vento_intensidade);
     }
 
-    // --- INÍCIO DA MEDIÇÃO DE TEMPO DA SIMULAÇÃO ---
     double t_inicio = omp_get_wtime();
 
-    int passo_atual = 0;
+    int passo_atual               = 0;
     int proximo_celulas_em_chamas = 0;
-    int ignicoes_no_passo = 0;
-    int total_ignicoes = 0;
-    int pico_passo = -1;
-    int pico_qtd = 0;
+    int ignicoes_no_passo         = 0;
 
-    // Contagens do próximo estado, zeradas a cada passo (equivalem a next_* em fire_seq.c).
-    // O reduction de um omp for combina com o valor anterior do item original, por isso
-    // esses acumuladores precisam ser zerados após serem copiados para as estatísticas finais.
+    // Acumuladores de reduction; zerados após copiados para cnt a cada passo.
     int proximo_nao_combustiveis = 0;
     int proximo_intactas         = 0;
     int proximo_queimadas        = 0;
     int proximo_contencao        = 0;
 
-    // Região Paralela Persistente
-    #pragma omp parallel num_threads(T) default(none) \
-        shared(L, C, P, total_celulas, grade, LIMIAR, passo_atual, \
-               celulas_em_chamas, proximo_celulas_em_chamas, \
-               deslocamento_offset, pesos_direcao, VIZINHOS, \
-               ignicoes_no_passo, total_ignicoes, pico_passo, pico_qtd, \
-               nao_combustiveis, intactas, em_chamas, queimadas, contencao, \
-               proximo_nao_combustiveis, proximo_intactas, proximo_queimadas, proximo_contencao)
+// Região Paralela Persistente
+#pragma omp parallel num_threads(T) default(none)                                                                                          \
+    shared(L, C, P, total_celulas, celulas, LIMIAR, passo_atual, cnt, pico, deslocamento_offset, pesos_direcao, VIZINHOS,                  \
+               proximo_celulas_em_chamas, ignicoes_no_passo, proximo_nao_combustiveis, proximo_intactas, proximo_queimadas,                \
+               proximo_contencao)
     {
-        while (passo_atual < P && celulas_em_chamas > 0) {
+        while (passo_atual < P && cnt.em_chamas > 0) {
 
-            // 1. Ativação das contenções
-            #pragma omp for simd schedule(static)
+// Ativação das contenções
+#pragma omp for simd schedule(static)
             for (long long i = 0; i < total_celulas; i++) {
-                if (grade.ativacao[i] == passo_atual && grade.estado_atual[i] == ESTADO_INTACTA) {
-                    grade.estado_atual[i] = ESTADO_CONTENCAO;
+                if (celulas.ativacao[i] == passo_atual && celulas.estado_atual[i] == ESTADO_INTACTA) {
+                    celulas.estado_atual[i] = ESTADO_CONTENCAO;
                 }
             }
 
-            // 2. Simulação, contagem do próximo estado e novas ignições
-            #pragma omp for collapse(2) schedule(static) \
-                reduction(+:proximo_celulas_em_chamas, ignicoes_no_passo, \
-                          proximo_nao_combustiveis, proximo_intactas, \
-                          proximo_queimadas, proximo_contencao)
+// Próximo estado e estatísticas
+#pragma omp for collapse(2) schedule(static) reduction(+ : proximo_celulas_em_chamas, ignicoes_no_passo, proximo_nao_combustiveis,         \
+                                                           proximo_intactas, proximo_queimadas, proximo_contencao)
             for (int l = 0; l < L; l++) {
                 for (int c = 0; c < C; c++) {
-                    long long i = (long long)l * C + c;
-                    ESTADO_CODIGO estado_celula = (ESTADO_CODIGO)grade.estado_atual[i];
+                    long long i                 = (long long)l * C + c;
+                    ESTADO_CODIGO estado_celula = (ESTADO_CODIGO)celulas.estado_atual[i];
 
                     if (estado_celula == ESTADO_INTACTA) {
                         int S = 0;
 
                         if (l > 0 && l < L - 1 && c > 0 && c < C - 1) {
                             for (int k = 0; k < 8; k++) {
-                                if (grade.estado_atual[i + deslocamento_offset[k]] == ESTADO_EM_CHAMAS) {
+                                if (celulas.estado_atual[i + deslocamento_offset[k]] == ESTADO_EM_CHAMAS) {
                                     S += pesos_direcao[k];
                                 }
                             }
@@ -462,69 +498,75 @@ int main(int argc, char *argv[]) {
 
                                 if (linha_vizinho >= 0 && linha_vizinho < L && coluna_vizinho >= 0 && coluna_vizinho < C) {
                                     long long vizinho = (long long)linha_vizinho * C + coluna_vizinho;
-                                    if (grade.estado_atual[vizinho] == ESTADO_EM_CHAMAS) {
+                                    if (celulas.estado_atual[vizinho] == ESTADO_EM_CHAMAS) {
                                         S += pesos_direcao[k];
                                     }
                                 }
                             }
                         }
 
-                        if (S > 0 && potencial_ignicao(S, fator_cobertura((COBERTURA_CODIGO)grade.cobertura[i]), grade.umidade[i]) >= LIMIAR) {
-                            grade.proximo_estado[i] = ESTADO_EM_CHAMAS;
-                            grade.proximo_tempo[i]  = tempo_queima_inicial((COBERTURA_CODIGO)grade.cobertura[i]);
+                        if (S > 0 &&
+                            potencial_ignicao(S, fator_cobertura((COBERTURA_CODIGO)celulas.cobertura[i]), celulas.umidade[i]) >= LIMIAR) {
+                            celulas.proximo_estado[i] = ESTADO_EM_CHAMAS;
+                            celulas.proximo_tempo[i]  = tempo_queima_inicial((COBERTURA_CODIGO)celulas.cobertura[i]);
                             proximo_celulas_em_chamas++;
                             ignicoes_no_passo++;
                         } else {
-                            grade.proximo_estado[i] = ESTADO_INTACTA;
-                            grade.proximo_tempo[i]  = 0;
+                            celulas.proximo_estado[i] = ESTADO_INTACTA;
+                            celulas.proximo_tempo[i]  = 0;
                             proximo_intactas++;
                         }
 
                     } else if (estado_celula == ESTADO_EM_CHAMAS) {
-                        int tempo_ignicao_restante = grade.tempo_atual[i] - 1;
+                        int tempo_ignicao_restante = celulas.tempo_atual[i] - 1;
 
                         if (tempo_ignicao_restante == 0) {
-                            grade.proximo_estado[i] = ESTADO_QUEIMADA;
-                            grade.proximo_tempo[i]  = 0;
+                            celulas.proximo_estado[i] = ESTADO_QUEIMADA;
+                            celulas.proximo_tempo[i]  = 0;
                             proximo_queimadas++;
                         } else {
-                            grade.proximo_estado[i] = ESTADO_EM_CHAMAS;
-                            grade.proximo_tempo[i]  = tempo_ignicao_restante;
+                            celulas.proximo_estado[i] = ESTADO_EM_CHAMAS;
+                            celulas.proximo_tempo[i]  = tempo_ignicao_restante;
                             proximo_celulas_em_chamas++;
                         }
 
                     } else {
-                        grade.proximo_estado[i] = estado_celula;
-                        grade.proximo_tempo[i]  = 0;
+                        celulas.proximo_estado[i] = estado_celula;
+                        celulas.proximo_tempo[i]  = 0;
 
                         switch (estado_celula) {
-                            case ESTADO_NAO_COMBUSTIVEL: proximo_nao_combustiveis++; break;
-                            case ESTADO_QUEIMADA:        proximo_queimadas++;        break;
-                            case ESTADO_CONTENCAO:       proximo_contencao++;        break;
-                            default:                                                 break;
+                            case ESTADO_NAO_COMBUSTIVEL:
+                                proximo_nao_combustiveis++;
+                                break;
+                            case ESTADO_QUEIMADA:
+                                proximo_queimadas++;
+                                break;
+                            case ESTADO_CONTENCAO:
+                                proximo_contencao++;
+                                break;
+                            default:
+                                break;
                         }
                     }
                 }
             }
 
-            // 3. Troca de ponteiros e atualização do pico de ignições
-            #pragma omp single
+// Troca de buffers e atualização de pico
+#pragma omp single
             {
-                int *estado_temporario = grade.estado_atual;
-                grade.estado_atual = grade.proximo_estado;
-                grade.proximo_estado = estado_temporario;
+                int *estado_temporario = celulas.estado_atual;
+                celulas.estado_atual   = celulas.proximo_estado;
+                celulas.proximo_estado = estado_temporario;
 
-                int *tempo_temporario = grade.tempo_atual;
-                grade.tempo_atual = grade.proximo_tempo;
-                grade.proximo_tempo = tempo_temporario;
+                int *tempo_temporario = celulas.tempo_atual;
+                celulas.tempo_atual   = celulas.proximo_tempo;
+                celulas.proximo_tempo = tempo_temporario;
 
-                // Estatísticas do próximo estado (equivalentes às de fire_seq.c)
-                celulas_em_chamas = proximo_celulas_em_chamas;
-                em_chamas         = proximo_celulas_em_chamas;
-                nao_combustiveis  = proximo_nao_combustiveis;
-                intactas          = proximo_intactas;
-                queimadas         = proximo_queimadas;
-                contencao         = proximo_contencao;
+                cnt.em_chamas        = proximo_celulas_em_chamas;
+                cnt.nao_combustiveis = proximo_nao_combustiveis;
+                cnt.intactas         = proximo_intactas;
+                cnt.queimadas        = proximo_queimadas;
+                cnt.contencao        = proximo_contencao;
 
                 proximo_celulas_em_chamas = 0;
                 proximo_nao_combustiveis  = 0;
@@ -532,10 +574,10 @@ int main(int argc, char *argv[]) {
                 proximo_queimadas         = 0;
                 proximo_contencao         = 0;
 
-                total_ignicoes += ignicoes_no_passo;
-                if (ignicoes_no_passo > pico_qtd) {
-                    pico_qtd = ignicoes_no_passo;
-                    pico_passo = passo_atual;
+                cnt.total_ignicoes += ignicoes_no_passo;
+                if (ignicoes_no_passo > pico.quantidade) {
+                    pico.quantidade = ignicoes_no_passo;
+                    pico.passo      = passo_atual;
                 }
                 ignicoes_no_passo = 0;
 
@@ -544,32 +586,22 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    double t_fim = omp_get_wtime();
-    double tempo_execucao = t_fim - t_inicio;
+    double tempo_execucao = omp_get_wtime() - t_inicio;
 
-    // --- CHECKSUM (fora do trecho cronometrado) ---
-    double pct_queimado  = percentual_queimado(queimadas, em_chamas, total_combustiveis);
-    double pct_protegido = percentual_protegido(contencao, total_combustiveis);
+    // Checksum
     unsigned long long checksum = 0;
-    for (long long i = 0; i < L * C; i++) {
-        checksum = checksum * 31ULL + (unsigned long long)grade.estado_atual[i];
-        checksum = checksum * 31ULL + (unsigned long long)grade.tempo_atual[i];
+    for (long long i = 0; i < total_celulas; i++) {
+        checksum = checksum * 31ULL + (unsigned long long)celulas.estado_atual[i];
+        checksum = checksum * 31ULL + (unsigned long long)celulas.tempo_atual[i];
     }
 
-    // --- Impressão
-    printf("passos: %d\n", passo_atual);
-    printf("nao_combustiveis: %d\n", nao_combustiveis);
-    printf("intactas: %d\n", intactas);
-    printf("em_chamas: %d\n", em_chamas);
-    printf("queimadas: %d\n", queimadas);
-    printf("contencao: %d\n", contencao);
-    printf("total_ignicoes: %d\n", total_ignicoes);
-    printf("pico_ignicoes: %d %d\n", pico_passo, pico_qtd);
-    printf("percentual_queimado: %.2f\n", pct_queimado);
-    printf("percentual_protegido: %.2f\n", pct_protegido);
-    printf("checksum: %llu\n", checksum);
-    printf("tempo: %.6f\n", tempo_execucao);
+    // Percentuais
+    double pct_queimado  = percentual_queimado(cnt.queimadas, cnt.em_chamas, cnt.combustiveis_iniciais);
+    double pct_protegido = percentual_protegido(cnt.contencao, cnt.combustiveis_iniciais);
 
-    liberar_grade(&grade);
-    return 0;
+    liberar_cels(&celulas);
+
+    print_data(cnt, passo_atual, pico, pct_queimado, pct_protegido, checksum, tempo_execucao);
+
+    return EXIT_SUCCESS;
 }
