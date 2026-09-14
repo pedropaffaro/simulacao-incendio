@@ -495,7 +495,7 @@ int main(int argc, char *argv[]) {
 
                     } else {
                         grade.proximo_estado[i] = estado_celula;
-                        grade.proximo_tempo[i]  = grade.tempo_atual[i];
+                        grade.proximo_tempo[i]  = 0;
 
                         switch (estado_celula) {
                             case ESTADO_NAO_COMBUSTIVEL: proximo_nao_combustiveis++; break;
