@@ -482,7 +482,7 @@ int main(int argc, char *argv[]) {
                         if (l > 0 && l < L - 1 && c > 0 && c < C - 1) {
                             #pragma omp simd reduction(+:S)
                             for (int k = 0; k < 8; k++) {
-                                int atual_em_chamas = (grade.estado_atual[i + deslocamento_offset[k]] == ESTADO_EM_CHAMAS);
+                                int atual_em_chamas = (celulas.estado_atual[i + deslocamento_offset[k]] == ESTADO_EM_CHAMAS);
                                 S += pesos_direcao[k] * atual_em_chamas;
                             }
                         } else {
