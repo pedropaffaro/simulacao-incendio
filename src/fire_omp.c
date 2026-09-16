@@ -3,6 +3,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifndef SCHED
+    #define SCHED static
+#endif
+
 typedef struct {
     int vertical;
     int horizontal;
@@ -461,7 +465,7 @@ int main(int argc, char *argv[]) {
     {
         while (passo_atual < P && cnt.em_chamas > 0) {
             // Ativação das contenções
-            #pragma omp for schedule(static)
+            #pragma omp for schedule(SCHED)
                 for (long long i = 0; i < total_celulas; i++) {
                     if (celulas.ativacao[i] == passo_atual && celulas.estado_atual[i] == ESTADO_INTACTA) {
                         celulas.estado_atual[i] = ESTADO_CONTENCAO;
@@ -469,7 +473,7 @@ int main(int argc, char *argv[]) {
                 }
 
             // Próximo estado e estatísticas
-            #pragma omp for collapse(2) schedule(static) reduction(+ : proximo_celulas_em_chamas, ignicoes_no_passo, proximo_nao_combustiveis,         \
+            #pragma omp for collapse(2) schedule(SCHED) reduction(+ : proximo_celulas_em_chamas, ignicoes_no_passo, proximo_nao_combustiveis,         \
                                                            proximo_intactas, proximo_queimadas, proximo_contencao)
             for (int l = 0; l < L; l++) {
                 for (int c = 0; c < C; c++) {
