@@ -14,7 +14,7 @@ fire_seq: src/fire_seq.c
 fire_omp: src/fire_omp.c
 	$(CC) $(CFLAGS) $(INC) $^ -o $@ $(LDFLAGS)
 
-# Compila variantes da versão paralela injetando macros de agendamento (-DSCHED)
+# Compila variantes da versão paralela injetando macros do scheduling e diferentes chunks pra comparação (-DSCHED)
 experimentos: fire_seq
 	$(CC) $(CFLAGS) -DSCHED="static" $(INC) src/fire_omp.c -o fire_omp_static $(LDFLAGS)
 	$(CC) $(CFLAGS) -DSCHED="dynamic,16" $(INC) src/fire_omp.c -o fire_omp_dyn_16 $(LDFLAGS)
