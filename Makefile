@@ -11,6 +11,12 @@ fire_seq: src/fire_seq.c
 fire_omp: src/fire_omp.c
 	$(CC) $(CFLAGS) $(INC) $^ -o $@ $(LDFLAGS)
 
+experimentos: fire_seq
+	$(CC) $(CFLAGS) -DSCHED="static" $(INC) src/fire_omp.c -o fire_omp_static $(LDFLAGS)
+	$(CC) $(CFLAGS) -DSCHED="dynamic,16" $(INC) src/fire_omp.c -o fire_omp_dyn_16 $(LDFLAGS)
+	$(CC) $(CFLAGS) -DSCHED="dynamic,128" $(INC) src/fire_omp.c -o fire_omp_dyn_128 $(LDFLAGS)
+	$(CC) $(CFLAGS) -DSCHED="dynamic,1024" $(INC) src/fire_omp.c -o fire_omp_dyn_1024 $(LDFLAGS)
+
 define run_tests
   @pass=0; fail=0; got=$$(mktemp); exp=$$(mktemp); out=$$(mktemp); \
   for in_file in tests/in/*.in; do \
@@ -44,6 +50,6 @@ test: fire_seq fire_omp
 	@echo "=== SEQ ===" && $(MAKE) -s test_seq && echo "" && echo "=== OMP ===" && $(MAKE) -s test_omp
 
 clean:
-	rm -f fire_seq fire_omp
+	rm -f fire_seq fire_omp fire_omp_static fire_omp_dyn_*
 
 .PHONY: all test test_seq test_omp run clean
