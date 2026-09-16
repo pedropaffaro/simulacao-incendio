@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -fopenmp
+CFLAGS = -Wall -Wextra -O2 -fopenmp -std=c99 # Talvez depois testar com -O3 no lugar de -02 e -march=native
 INC = -Iinclude
 LDFLAGS = -lm
 

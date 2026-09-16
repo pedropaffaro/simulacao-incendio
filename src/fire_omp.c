@@ -454,8 +454,9 @@ int main(int argc, char *argv[]) {
     int proximo_contencao        = 0;
 
 // Região Paralela Persistente
+    const DIRECAO *vizinhos = VIZINHOS;
     #pragma omp parallel num_threads(T) default(none)  \
-    shared(L, C, P, total_celulas, celulas, LIMIAR, passo_atual, cnt, pico, deslocamento_offset, pesos_direcao, VIZINHOS,  \
+    shared(L, C, P, total_celulas, celulas, LIMIAR, passo_atual, cnt, pico, deslocamento_offset, pesos_direcao, vizinhos, \
                proximo_celulas_em_chamas, ignicoes_no_passo, proximo_nao_combustiveis, proximo_intactas, proximo_queimadas, \
                proximo_contencao)
     {
@@ -487,8 +488,8 @@ int main(int argc, char *argv[]) {
                             }
                         } else {
                             for (int k = 0; k < 8; k++) {
-                                int linha_vizinho  = l + VIZINHOS[k].vertical;
-                                int coluna_vizinho = c + VIZINHOS[k].horizontal;
+                                int linha_vizinho  = l + vizinhos[k].vertical;
+                                int coluna_vizinho = c + vizinhos[k].horizontal;
 
                                 if (linha_vizinho >= 0 && linha_vizinho < L && coluna_vizinho >= 0 && coluna_vizinho < C) {
                                     long long vizinho = (long long)linha_vizinho * C + coluna_vizinho;
