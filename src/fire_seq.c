@@ -498,12 +498,25 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    long long deslocamento_offset[8];
+    int pesos_direcao[8];
+
+    /* Pré-calcula os deslocamentos de memória em 1D e os pesos direcionais com o vento
+    para os 8 vizinhos de Moore, já que o vento é constante durante toda a simulação
+    (mesma otimização da versão paralela, Seção 4.4) */
+    for (int k = 0; k < 8; k++) {
+        int variacao_linha  = VIZINHOS[k].vertical;
+        int variacao_coluna = VIZINHOS[k].horizontal;
+
+        deslocamento_offset[k] = (long long)variacao_linha * C + variacao_coluna;
+        pesos_direcao[k]       = peso_vizinho(-variacao_linha, -variacao_coluna, vento_linha, vento_coluna, vento_intensidade);
+    }
+
     /* Marca o tempo inicial da simulação */
     double t_inicio = omp_get_wtime();
 
-    int passo_atual  = 0;
-    PICO pico        = {-1, 0};
-    COORDENADA coord = {0, 0};
+    int passo_atual = 0;
+    PICO pico       = {-1, 0};
 
     // Pico já começa em {-1, 0} pra sair certo (-1 0) se a simulação não tiver nenhuma ignição
     while (passo_atual < P && cnt.em_chamas > 0) {
@@ -518,83 +531,98 @@ int main(int argc, char *argv[]) {
         int next_nao_comb = 0, next_intactas = 0, next_em_chamas = 0;
         int next_queimadas = 0, next_contencao = 0;
 
-        for (long long i = 0; i < total_celulas; i++) {
-            coord = get_coordenada(i, C);
+        for (int l = 0; l < L; l++) {
+            for (int c = 0; c < C; c++) {
+                /* Índice construído diretamente de l e c, sem divisão/módulo (Seção 3.2/4.4) */
+                long long i = (long long)l * C + c;
 
-            switch (celulas.estado_atual[i]) {
-                case ESTADO_NAO_COMBUSTIVEL: {
-                    celulas.proximo_estado[i] = ESTADO_NAO_COMBUSTIVEL;
-                    celulas.proximo_tempo[i]  = 0;
-                    next_nao_comb++;
-                    break;
-                }
-
-                case ESTADO_INTACTA: {
-                    int S = 0;
-                    COORDENADA vizinho_coord;
-
-                    // Soma o peso de cada vizinho em chamas, pulando os que caem fora da matriz (célula de borda)
-                    for (int viz = 0; viz < 8; viz++) {
-                        vizinho_coord = (COORDENADA){coord.linha + VIZINHOS[viz].vertical, coord.coluna + VIZINHOS[viz].horizontal};
-
-                        if (vizinho_coord.linha < 0 || vizinho_coord.linha >= L || vizinho_coord.coluna < 0 || vizinho_coord.coluna >= C)
-                            continue;
-
-                        long long viz_idx = get_idx(vizinho_coord, C);
-
-                        if (celulas.estado_atual[viz_idx] != ESTADO_EM_CHAMAS)
-                            continue;
-
-                        int prop_linha  = coord.linha - vizinho_coord.linha;
-                        int prop_coluna = coord.coluna - vizinho_coord.coluna;
-                        S += peso_vizinho(prop_linha, prop_coluna, vento_linha, vento_coluna, vento_intensidade);
-                    }
-
-                    /* Calcula o potencial de ignição e verifica se atinge o limiar pra pegar fogo */
-                    int I = potencial_ignicao(S, fator_cobertura(celulas.cobertura[i]), celulas.umidade[i]);
-
-                    if (I >= LIMIAR) {
-                        celulas.proximo_estado[i] = ESTADO_EM_CHAMAS;
-                        celulas.proximo_tempo[i]  = tempo_queima_inicial(celulas.cobertura[i]);
-                        novos_incendios++;
-                        next_em_chamas++;
-                    } else {
-                        celulas.proximo_estado[i] = ESTADO_INTACTA;
+                switch (celulas.estado_atual[i]) {
+                    case ESTADO_NAO_COMBUSTIVEL: {
+                        celulas.proximo_estado[i] = ESTADO_NAO_COMBUSTIVEL;
                         celulas.proximo_tempo[i]  = 0;
-                        next_intactas++;
+                        next_nao_comb++;
+                        break;
                     }
 
-                    break;
-                }
+                    case ESTADO_INTACTA: {
+                        int S = 0;
 
-                case ESTADO_EM_CHAMAS: {
-                    /* Decrementa o tempo de queima restante da célula */
-                    int novo_tempo = celulas.tempo_atual[i] - 1;
+                        /* Célula interna: todos os 8 vizinhos existem, dispensa checar limites da matriz (Seção 4.4) */
+                        if (l > 0 && l < L - 1 && c > 0 && c < C - 1) {
+                            for (int viz = 0; viz < 8; viz++) {
+                                if (celulas.estado_atual[i + deslocamento_offset[viz]] == ESTADO_EM_CHAMAS)
+                                    S += pesos_direcao[viz];
+                            }
+                        } else {
+                            /* Célula de borda: soma o peso dos vizinhos existentes, checando os limites da matriz */
+                            for (int viz = 0; viz < 8; viz++) {
+                                int linha_vizinho  = l + VIZINHOS[viz].vertical;
+                                int coluna_vizinho = c + VIZINHOS[viz].horizontal;
 
-                    if (novo_tempo == 0) {
+                                if (linha_vizinho < 0 || linha_vizinho >= L || coluna_vizinho < 0 || coluna_vizinho >= C)
+                                    continue;
+
+                                long long viz_idx = (long long)linha_vizinho * C + coluna_vizinho;
+
+                                if (celulas.estado_atual[viz_idx] == ESTADO_EM_CHAMAS)
+                                    S += pesos_direcao[viz];
+                            }
+                        }
+
+                        /* Curto-circuito: sem vizinho em chamas, o potencial é 0 e nunca atinge LIMIAR > 0 (Seção 4.4) */
+                        if (S == 0) {
+                            celulas.proximo_estado[i] = ESTADO_INTACTA;
+                            celulas.proximo_tempo[i]  = 0;
+                            next_intactas++;
+                            break;
+                        }
+
+                        /* Calcula o potencial de ignição e verifica se atinge o limiar pra pegar fogo */
+                        int I = potencial_ignicao(S, fator_cobertura(celulas.cobertura[i]), celulas.umidade[i]);
+
+                        if (I >= LIMIAR) {
+                            celulas.proximo_estado[i] = ESTADO_EM_CHAMAS;
+                            celulas.proximo_tempo[i]  = tempo_queima_inicial(celulas.cobertura[i]);
+                            novos_incendios++;
+                            next_em_chamas++;
+                        } else {
+                            celulas.proximo_estado[i] = ESTADO_INTACTA;
+                            celulas.proximo_tempo[i]  = 0;
+                            next_intactas++;
+                        }
+
+                        break;
+                    }
+
+                    case ESTADO_EM_CHAMAS: {
+                        /* Decrementa o tempo de queima restante da célula */
+                        int novo_tempo = celulas.tempo_atual[i] - 1;
+
+                        if (novo_tempo == 0) {
+                            celulas.proximo_estado[i] = ESTADO_QUEIMADA;
+                            celulas.proximo_tempo[i]  = 0;
+                            next_queimadas++;
+                        } else {
+                            celulas.proximo_estado[i] = ESTADO_EM_CHAMAS;
+                            celulas.proximo_tempo[i]  = novo_tempo;
+                            next_em_chamas++;
+                        }
+
+                        break;
+                    }
+
+                    case ESTADO_QUEIMADA:
                         celulas.proximo_estado[i] = ESTADO_QUEIMADA;
                         celulas.proximo_tempo[i]  = 0;
                         next_queimadas++;
-                    } else {
-                        celulas.proximo_estado[i] = ESTADO_EM_CHAMAS;
-                        celulas.proximo_tempo[i]  = novo_tempo;
-                        next_em_chamas++;
-                    }
+                        break;
 
-                    break;
+                    case ESTADO_CONTENCAO:
+                        celulas.proximo_estado[i] = ESTADO_CONTENCAO;
+                        celulas.proximo_tempo[i]  = 0;
+                        next_contencao++;
+                        break;
                 }
-
-                case ESTADO_QUEIMADA:
-                    celulas.proximo_estado[i] = ESTADO_QUEIMADA;
-                    celulas.proximo_tempo[i]  = 0;
-                    next_queimadas++;
-                    break;
-
-                case ESTADO_CONTENCAO:
-                    celulas.proximo_estado[i] = ESTADO_CONTENCAO;
-                    celulas.proximo_tempo[i]  = 0;
-                    next_contencao++;
-                    break;
             }
         }
 
@@ -628,7 +656,7 @@ int main(int argc, char *argv[]) {
     double tempo_execucao = omp_get_wtime() - t_inicio;
 
     // Checksum
-    // cClculado depois de parar o cronômetro, sempre na mesma ordem sequencial, pra dar exatamente o mesmo valor na versão paralela
+    // Calculado depois de parar o cronômetro, sempre na mesma ordem sequencial, pra dar exatamente o mesmo valor na versão paralela
     unsigned long long checksum = 0;
     for (long long i = 0; i < total_celulas; i++) {
         checksum = checksum * 31ULL + (unsigned long long)celulas.estado_atual[i];

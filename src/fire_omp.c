@@ -482,7 +482,7 @@ int main(int argc, char *argv[]) {
 
     /* Varredura inicial em paralelo pra contar combustíveis e a distribuição de estados antes de começar a simular
     Fica fora do trecho cronometrado, então não conta como custo da simulação em si */
-    #pragma omp parallel for num_threads(T) schedule(static) default(none) shared(total_celulas, celulas)                                 \
+    #pragma omp parallel for num_threads(T) schedule(SCHED) default(none) shared(total_celulas, celulas)                                 \
     reduction(+ : init_combustiveis, init_nao_combustiveis, init_intactas, init_em_chamas, init_queimadas, init_contencao)
     for (long long i = 0; i < total_celulas; i++) {
         COBERTURA_CODIGO cob = (COBERTURA_CODIGO)celulas.cobertura[i];
@@ -549,8 +549,12 @@ int main(int argc, char *argv[]) {
     {
         while (passo_atual < P && cnt.em_chamas > 0) {
             // Ativação das contenções
-            /* Ativa as zonas de contenção agendadas para o passo_atual em paralelo */
-            #pragma omp for schedule(SCHED)
+            /* Ativa as zonas de contenção agendadas para o passo_atual em paralelo.
+            O `simd` aqui só produz código vetorizado quando compilado com -march=native
+            (requer AVX2 para a escrita condicional mascarada; o alvo x86-64 padrão da
+            Tabela 4 não tem essa instrução). Sem -march=native a diretiva é um no-op
+            seguro: o compilador simplesmente ignora o pedido de vetorização. */
+            #pragma omp for simd schedule(SCHED)
                 for (long long i = 0; i < total_celulas; i++) {
                     if (celulas.ativacao[i] == passo_atual && celulas.estado_atual[i] == ESTADO_INTACTA) {
                         celulas.estado_atual[i] = ESTADO_CONTENCAO;
