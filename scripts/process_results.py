@@ -36,6 +36,14 @@ PLOT_DIR = ROOT / "results" / "plot"
 CARGA_ORDEM = ["pequena", "media", "grande"]
 CARGA_LABEL = {"pequena": "Pequena", "media": "Média", "grande": "Grande"}
 
+# Numero de nucleos fisicos do processador usado nos experimentos (Tabela 4 /
+# Ambiente experimental do relatorio: Intel Core i7-4790, 4 fisicos / 8 logicos
+# via hyperthreading). Usado para normalizar a eficiencia "real" na Tabela 9
+# (tab_speedup_corrigido.tex), em contraste com a normalizacao pelo T nominal
+# de cada entrada, que para as cargas media/grande e 8 (inclui as threads
+# logicas de hyperthreading, nao so os nucleos fisicos).
+NUM_NUCLEOS_FISICOS = 4
+
 NUM_FIELDS = {
     "T_arquivo", "rep", "passos", "nao_combustiveis", "intactas", "em_chamas",
     "queimadas", "contencao", "total_ignicoes", "pico_passo", "pico_qtd",
@@ -292,7 +300,21 @@ def tabela_monothread(rows):
 
 
 # ---------------------------------------------------------------------------
-# Tabela 11 -- speedup medido decomposto em fator monothread x fator paralelo
+# Tabela 9 -- speedup medido decomposto em fator monothread x fator paralelo
+#
+# Reporta DUAS eficiencias para S_par, porque sao respostas a perguntas
+# diferentes:
+#   - E_par_T:       S_par / T_arquivo (T nominal da entrada: 4 ou 8).
+#                     Cai bastante nas cargas media/grande porque ali T=8
+#                     conta as 4 threads logicas de hyperthreading como se
+#                     fossem nucleos completos.
+#   - E_par_fisico:  S_par / NUM_NUCLEOS_FISICOS (sempre 4, os nucleos fisicos
+#                     reais do processador, Tabela 4). E esta a metrica usada
+#                     no texto do relatorio (abstract e Secao 8) para afirmar
+#                     eficiencia de 93-98%; antes desta correcao, a coluna
+#                     unica "E paralela (/T)" usava T_arquivo tambem para
+#                     media/grande, o que produzia 0,48/0,49 em vez disso e
+#                     ficava inconsistente com o texto.
 def tabela_speedup_corrigido(rows, fatores_monothread):
     linhas_tex, linhas_dat = [], []
     for carga in CARGA_ORDEM:
@@ -313,18 +335,20 @@ def tabela_speedup_corrigido(rows, fatores_monothread):
             aprox = "\\approx "
         else:
             linhas_tex.append(f"{CARGA_LABEL[carga]} & {T} & {fmt_dec(S_medido, 2)} & "
-                               f"\\TODO{{}} & \\TODO{{}} & \\TODO{{}} \\\\")
+                               f"\\TODO{{}} & \\TODO{{}} & \\TODO{{}} & \\TODO{{}} \\\\")
             continue
 
         S_par = S_medido / fator
-        E_par = S_par / T
+        E_par_T = S_par / T
+        E_par_fisico = S_par / NUM_NUCLEOS_FISICOS
         fator_str = f"${aprox}{fmt_dec(fator, 3 if not aprox else 2)}$" if aprox else fmt_dec(fator, 3)
         S_par_str = f"$\\approx {fmt_dec(S_par, 2)}$" if aprox else fmt_dec(S_par, 2)
-        E_par_str = f"$\\approx {fmt_dec(E_par, 2)}$" if aprox else fmt_dec(E_par, 2)
+        E_par_T_str = f"$\\approx {fmt_dec(E_par_T, 2)}$" if aprox else fmt_dec(E_par_T, 2)
+        E_par_fisico_str = f"$\\approx {fmt_dec(E_par_fisico, 2)}$" if aprox else fmt_dec(E_par_fisico, 2)
 
         linhas_tex.append(
             f"{CARGA_LABEL[carga]} & {T} & {fmt_dec(S_medido, 2)} & {fator_str} & "
-            f"{S_par_str} & {E_par_str} \\\\"
+            f"{S_par_str} & {E_par_T_str} & {E_par_fisico_str} \\\\"
         )
         linhas_dat.append(f"{CARGA_LABEL[carga]}\t{S_medido:.2f}\t{S_par:.2f}\t{T}")
     write_tex("tab_speedup_corrigido.tex", linhas_tex)
