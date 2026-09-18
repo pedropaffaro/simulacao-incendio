@@ -117,26 +117,6 @@ typedef struct {
     int total_ignicoes;
 } COUNTERS;
 
-// Representa uma coordenada na matriz(linha, coluna)
-/* Usada pra converter entre índice e posição 2D da célula em get_coordenada()/get_idx() */
-typedef struct {
-    int linha;
-    int coluna;
-} COORDENADA;
-
-/* Converte um índice (linha * C + coluna) de volta pra coordenada 2D */
-COORDENADA get_coordenada(long long idx, int C) {
-    COORDENADA coord;
-    coord.linha  = (int)(idx / C);
-    coord.coluna = (int)(idx % C);
-    return coord;
-}
-
-/* Inverso de get_coordenada(), converte uma coordenada 2D pro índice correspondente */
-long long int get_idx(COORDENADA coord, int C) {
-    return (long long)coord.linha * C + coord.coluna;
-}
-
 /* Aplica a ativação de zona de contenção numa célula
 Só muda alguma coisa se ela estava intacta, os outros estados passam direto sem efeito */
 ESTADO_CODIGO estado_apos_ativacao(ESTADO_CODIGO estado) {
