@@ -117,37 +117,6 @@ typedef struct {
     int total_ignicoes;
 } COUNTERS;
 
-// Representa uma coordenada na matriz(linha, coluna)
-/* Usada pra converter entre índice e posição 2D da célula em get_coordenada()/get_idx() */
-typedef struct {
-    int linha;
-    int coluna;
-} COORDENADA;
-
-/* Converte um índice (linha * C + coluna) de volta pra coordenada 2D */
-COORDENADA get_coordenada(long long idx, int C) {
-    COORDENADA coord;
-    coord.linha  = (int)(idx / C);
-    coord.coluna = (int)(idx % C);
-    return coord;
-}
-
-/* Inverso de get_coordenada(), converte uma coordenada 2D pro índice correspondente */
-long long int get_idx(COORDENADA coord, int C) {
-    return (long long)coord.linha * C + coord.coluna;
-}
-
-/* Aplica a ativação de zona de contenção numa célula
-Só muda alguma coisa se ela estava intacta, os outros estados passam direto sem efeito */
-ESTADO_CODIGO estado_apos_ativacao(ESTADO_CODIGO estado) {
-    switch (estado) {
-        case ESTADO_INTACTA:
-            return ESTADO_CONTENCAO;
-        default:
-            return estado;
-    }
-}
-
 /* Devolve o multiplicador de combustível de uma cobertura, usado no cálculo do potencial de ignição */
 int fator_cobertura(COBERTURA_CODIGO cobertura) {
     switch (cobertura) {
@@ -482,7 +451,7 @@ int main(int argc, char *argv[]) {
 
     /* Varredura inicial em paralelo pra contar combustíveis e a distribuição de estados antes de começar a simular
     Fica fora do trecho cronometrado, então não conta como custo da simulação em si */
-    #pragma omp parallel for num_threads(T) schedule(static) default(none) shared(total_celulas, celulas)                                 \
+    #pragma omp parallel for num_threads(T) schedule(SCHED) default(none) shared(total_celulas, celulas)                                 \
     reduction(+ : init_combustiveis, init_nao_combustiveis, init_intactas, init_em_chamas, init_queimadas, init_contencao)
     for (long long i = 0; i < total_celulas; i++) {
         COBERTURA_CODIGO cob = (COBERTURA_CODIGO)celulas.cobertura[i];
@@ -549,12 +518,17 @@ int main(int argc, char *argv[]) {
     {
         while (passo_atual < P && cnt.em_chamas > 0) {
             // Ativação das contenções
-            /* Ativa as zonas de contenção agendadas para o passo_atual em paralelo */
-            #pragma omp for schedule(SCHED)
+            /* Ativa as zonas de contenção agendadas para o passo_atual em paralelo
+            O corpo do loop é escrito em forma branchless (sem if), pra em vez de pular a escrita quando a condição é falsa,
+            sempre escreve, selecionando entre o novo estado e o estado atual (seguro porque reescrever o mesmo valor não
+            tem efeito). Isso evita a necessidade de masked-store de hardware (que só existe a partir de AVX2), então o simd
+            vetoriza usando blend, já com as flags padrão do Makefile (`-O2`, x86-64 baseline), sem exigir-march=native
+            O `&` no lugar de `&&` é proposital, pra evitar o curto-circuito que reintroduziria controle de fluxo
+            e quebraria a vetorização */
+            #pragma omp for simd schedule(SCHED)
                 for (long long i = 0; i < total_celulas; i++) {
-                    if (celulas.ativacao[i] == passo_atual && celulas.estado_atual[i] == ESTADO_INTACTA) {
-                        celulas.estado_atual[i] = ESTADO_CONTENCAO;
-                    }
+                    int deve_ativar = (celulas.ativacao[i] == passo_atual) & (celulas.estado_atual[i] == ESTADO_INTACTA);
+                    celulas.estado_atual[i] = deve_ativar ? ESTADO_CONTENCAO : celulas.estado_atual[i];
                 }
 
             // Próximo estado e estatísticas
