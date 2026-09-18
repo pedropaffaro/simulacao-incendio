@@ -4,11 +4,17 @@
 
 ---
 
+# ÚLTIMA COISA QUE FALTA, SÓ PRA FECHAR COM CHAVE DE OURO EU ACHO
+
+- [ ] Inspecionar a saída de -fopt-info-vec para o laço sequencial, p/ ver se está ou não sendo automaticamente vetorizado pela flag `-02`
+
+---
+
 ## Estrutura do projeto
 - [x] `fire_seq.c`
 - [x] `fire_omp.c`
 - [x] `Makefile`
-- [~] `relatorio.pdf` — ainda não exportado, mas o `main.tex` no Overleaf já cobre a maior parte do texto (Seções 1–4 e o apêndice de compilação/execução escritos; faltam as tabelas/figuras de resultados e a análise final, ver "Pendências" e "Relatório" abaixo)
+- [x] `relatorio.pdf`
 
 ---
 
@@ -71,6 +77,12 @@
 > (`pico_passo`/`pico_qtd`) de versões anteriores do arquivo. O bug antigo de inicialização
 > (`pico_passo = 0` em vez de `-1`, que imprimia `0 0` no caso sem ignição) está corrigido e
 > não existe mais nessa forma — ver seção "Cálculo dos resultados" abaixo.
+>
+> **Atualização 2:** a função auxiliar para aplicar a ativação de zona de contenção numa célula,
+> foi **removida** das duas versões. O laço de ativação de zonas hoje é escrito branchless
+> índice linear calculado por `i = (long long)l * C + c`, sem nenhuma divisão. A mudança vale
+> para as duas versões, não só a paralela — ambas compartilham essa e as demais otimizações do
+> laço de atualização.
 
 ---
 
@@ -163,10 +175,6 @@
      com *store* condicional (branchless), sem dependência entre iterações;
   3. **novo:** soma dos vizinhos em chamas no caminho rápido do interior:
      `#pragma omp simd reduction(+:S)` (linha 560), sobre os 8 deslocamentos pré-calculados.
-  - Efeito prático continua dependendo das flags: com `-O2` (flags do `Makefile`) a vetorização
-    manual do `simd` ainda não é garantida pelo gcc em todos os três pontos; com
-    `-march=native`/`-O3` mais laços vetorizam de fato. Isso é discutido no `main.tex` (Seção
-    4.4) e não muda o resultado da simulação em nenhum conjunto de flags testado.
 - [x] Reduções para contadores (sem `critical`/`atomic` no laço principal) — `reduction(+:...)` nas linhas 465 e 547; nenhum `critical`/`atomic` no código
 - [x] Troca de matrizes sem condição de corrida — dentro de `omp single` (linha 624), com barreira implícita antes (fim do `omp for`) e depois (fim do `single`)
 - [x] Condição de parada compartilhada corretamente — `passo_atual` e os contadores de `cnt` atualizados no `single`; a barreira implícita do `single` implica *flush*, então todas as threads reavaliam o `while` com os mesmos valores
@@ -227,12 +235,16 @@ não era esperada — e não foi observada — nenhuma divergência de `checksum
 `pico_ignicoes` em relação às medições anteriores. Nenhuma divergência de resultado entre as
 versões permanece conhecida. `make test` passa 3/3 nas duas versões.
 
-> Nenhuma medição de speedup foi feita ainda com o código atual: as medições de tempo
-> anteriores foram feitas com uma versão de `fire_seq.c` que ainda tinha a conversão de
-> índice por divisão, removida desde então (ver "Loop da simulação"), então os números de
-> tempo antigos **não valem mais** e não devem ser reaproveitados — só os resultados de
-> corretude (checksum/ignições/pico) continuam válidos, porque não dependem de como o índice é
-> calculado.
+> Speedup medido com o código atual (Pendências 1–2 da seção anterior, resolvidas): ganho
+> bruto de 3,29× a 3,54× entre as três cargas (Tabela 8), praticamente igual ao ganho
+> atribuível só à paralelização (fator monothread ≈ 0,94–0,97×, ver nota abaixo), com
+> eficiência de 88–91% contra os 4 núcleos físicos. Os números de tempo desta seção
+> ("Validação sequencial × paralela") continuam sem relação com esses — aqui só interessa
+> saída idêntica exceto tempo, não o valor do tempo em si — mas a ressalva antiga (medições
+> de tempo feitas com a versão antiga do índice por divisão) não se aplica mais: a coleta de
+> desempenho atual já é 100% sobre o código pós-remoção do índice por divisão e com as
+> reescritas *branchless* compartilhadas entre `fire_seq.c` e `fire_omp.c` (ver "Loop da
+> simulação" acima).
 
 ---
 
@@ -314,24 +326,35 @@ como `\begin{figure}` no relatório — isso entra na lista de pendências do re
 
 ## Pendências, em ordem de prioridade
 
-1. **Rodar `make experimentos` e `bash scripts/run_benchmarks.sh` no cluster** para gerar `results/raw/runs.csv` com o
-   código atual (já com o índice linear sem divisão e o `SCHED` parametrizado nas duas
-   versões). As medições de tempo antigas não valem mais (ver nota em "Validação sequencial ×
-   paralela"), então isso não é opcional mesmo tendo rodado antes.
-2. **Rodar `scripts/process_results.py`** para gerar as tabelas/figuras em cima do CSV gerado acima e
-   copiar o conteúdo de `results/plot/` para a pasta `plot/` do Overleaf (ver seção anterior).
-   Conferir os avisos de determinismo no `stderr` antes de dar como concluído.
-3. **Montar as Figuras 2 e 3** no `main.tex` (vazão e speedup/eficiência), hoje ausentes —
-   só existe a Figura 1 (tempos). Os dados (`fig_vazao.dat`, `fig_varredura.dat`,
-   `fig_schedules.dat`, `fig_speedup.dat`) já são gerados pelo script; falta só o
-   `\begin{figure}`/`\begin{tikzpicture}` no relatório, seguindo o mesmo padrão da Figura 1.
-4. **Atualizar o texto da Seção 8 (Análise dos resultados) e a Conclusão** com os números reais
-   assim que as tabelas forem preenchidas — hoje esses trechos estão marcados como `\TODO{}`
-   em vermelho no `main.tex`, porque a análise anterior (decomposição do speedup em "fator
-   monothread" atribuído à conversão de índice) não se aplica mais ao código atual: essa
-   otimização hoje é compartilhada pelas duas versões, então o "fator monothread" esperado é
-   próximo de 1, e é preciso reescrever a análise a partir dos números novos, não só colar as
-   tabelas.
+1. **[x] Rodar `make experimentos` e `bash scripts/run_benchmarks.sh` no cluster** — feito, com
+   10 repetições em todos os grupos cronometrados (log completo da execução arquivado à parte).
+   Gerou `results/raw/runs.csv` (897 linhas) já com o código atual (índice linear sem divisão e
+   `SCHED` parametrizado nas duas versões, e agora também com as duas reescritas *branchless* —
+   ativação de zonas e soma dos vizinhos — compartilhadas por `fire_seq.c` e `fire_omp.c`).
+2. **[x] Rodar `scripts/process_results.py`** — feito, sem nenhum aviso de não-determinismo no
+   `stderr` (checksum/`total_ignicoes`/`pico_ignicoes` idênticos entre `fire_seq` e
+   `fire_omp_static`, e entre todos os `T`/`schedule` testados). Gerou os 8 `tab_*.tex` e os 6
+   `fig_*.dat` em `results/plot/`.
+   **Ainda falta:** copiar esses 14 arquivos para a pasta `plot/` do Overleaf — sem isso, as
+   tabelas e figuras do `main.tex` caem no ramo `\TODO{}`/vazio do `\IfFileExists`.
+3. **[x] Figuras 2 e 3 no `main.tex`** — já estavam montadas nesta versão do relatório (Figura 2,
+   `fig:vazao`, vazão sequencial × paralela por *thread*; Figura 3, `fig:varredura`, $S(T)$/$E(T)$
+   contra a reta ideal), lendo `fig_vazao.dat` e `fig_varredura.dat` do mesmo jeito que a Figura 1;
+   este item da checklist estava desatualizado.
+4. **[x] Seção 8 (Análise dos resultados) e Conclusão reescritas** a partir dos números da nova
+   coleta. A conclusão da análise mudou de forma relevante em relação a qualquer versão anterior:
+   com as reescritas *branchless* hoje idênticas nas duas versões (não só a eliminação do índice
+   por divisão), o **fator monothread caiu de ~3,6× para ~0,94–0,97×** — ou seja, praticamente 1,
+   sem vantagem serial mensurável de `fire_omp` sobre `fire_seq` com $T=1$ (a hipótese que melhor
+   explica isso é o gcc já autovetorizar os dois laços *branchless* mesmo sem `#pragma omp simd`
+   explícito, nas flags padrão `-O2`; não confirmado diretamente com `-fopt-info-vec`, ver
+   "trabalho futuro" no `main.tex`). Como consequência, o speedup bruto medido (3,29–3,54×) já é,
+   ele mesmo, quase todo atribuível à paralelização — não precisa mais da correção de mais de 3×
+   que a análise anterior aplicava. A eficiência paralela normalizada pelos 4 núcleos físicos
+   ficou em 88–91% nas três cargas (antes 92–93%, valor parecido, mas chegando lá por um caminho
+   bem diferente: antes por uma correção grande sobre um bruto inflado, agora quase sem correção
+   sobre um bruto que já não é inflado). Também corrigido: `static,1024`, não `static`, é hoje o
+   *schedule* mais rápido nos quatro valores de $T$ testados (Tabela 13).
 
 ---
 
@@ -346,9 +369,13 @@ como `\begin{figure}` no relatório — isso entra na lista de pendências do re
 - [x] Apêndice de compilação/execução para quem for corrigir — adicionado, restrito ao que o
       corretor de fato usa (`make all`, `./fire_seq entrada.txt`, `./fire_omp entrada.txt`),
       sem depender dos scripts de benchmark (que não fazem parte do zip de entrega)
-- [ ] Tabela de tempos para diferentes entradas/threads — pendente da nova coleta (Pendência 1–2)
-- [ ] Speedup e eficiência — fórmulas e texto prontos, números pendentes da nova coleta
-- [~] Gráficos — só a Figura 1 (tempos) está montada; Figuras 2 e 3 pendentes (Pendência 3)
-- [ ] Análise dos resultados (Seção 8) e Conclusão — roteiro pronto, mas o texto atual está
-      marcado como `\TODO{}` porque a hipótese antiga (fator monothread ligado à conversão de
-      índice) não vale mais; reescrever a partir dos números novos (Pendência 4)
+- [x] Tabela de tempos para diferentes entradas/threads — preenchida com a nova coleta
+      (Tabelas 7, 12 e 4; Pendência 1–2 resolvidas). Falta só copiar `results/plot/*` para o
+      Overleaf para o `\IfFileExists` do `main.tex` encontrar os arquivos.
+- [x] Speedup e eficiência — números preenchidos (Tabelas 8 e 9); texto da Seção 7
+      (`sec:tempos-execucao`, `sec:varredura-t`) atualizado para os valores reais, sem mais
+      falar em eficiência "superlinear" — a bruta já é sublinear (0,41–0,88) nesta coleta.
+- [x] Gráficos — Figuras 1 (tempos), 2 (vazão) e 3 (varredura de $T$) montadas e lendo os
+      `.dat` novos; item estava desatualizado, as três já existiam no `main.tex` (Pendência 3).
+- [x] Análise dos resultados (Seção 8) e Conclusão — reescritas a partir dos números novos, com
+      a mudança de narrativa do fator monothread (~3,6× → ~0,94–0,97×) descrita na Pendência 4.
