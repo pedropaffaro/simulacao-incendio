@@ -21,6 +21,13 @@ Cada tab_*.tex contém SOMENTE as linhas de corpo da tabela (entre \midrule e
 main.tex -- assim o texto e a formatação da tabela ficam no relatório, e só
 os números vêm do processamento.
 
+Além de gerar as tabelas, o script AVISA (em stderr, sem interromper a
+execução) se detectar qualquer sinal de não-determinismo entre a versão
+sequencial e a paralela, ou entre execuções da paralela com T/schedule
+diferentes: checksum, total_ignicoes e pico_ignicoes deveriam ser idênticos
+em todos esses casos (checar_seq_par + check_determinism, chamada nos
+grupos threads_det, varredura_T e schedules).
+
 Uso:
     python3 scripts/process_results.py [caminho/para/runs.csv]
 """
@@ -49,6 +56,13 @@ NUM_FIELDS = {
     "queimadas", "contencao", "total_ignicoes", "pico_passo", "pico_qtd",
     "percentual_queimado", "percentual_protegido", "tempo",
 }
+
+# Conjuntos de T usados nas Tabelas 4, 12 e 13 (threads_det, varredura_T,
+# schedules). Centralizados aqui porque antes apareciam repetidos como
+# literais em cada funcao -- mudar o conjunto de T's testados exigia lembrar
+# de trocar em varios lugares.
+T_VALORES_PADRAO = (1, 2, 4, 8, 16)
+T_VALORES_SCHEDULES = (2, 4, 8, 16)
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +102,48 @@ def check_determinism(rows, chave_grupo):
         if len(vs) > 1:
             print(f"[aviso] {chave_grupo}: campo '{c}' variou entre execuções ({vs}) "
                   f"-- verifique determinismo!", file=sys.stderr)
+
+
+def checar_seq_par(rows):
+    """Confere, para cada carga do grupo 'tempos', se o checksum de fire_seq
+    bate com o de fire_omp_static -- a alegacao central do trabalho (Secao
+    5/Validacao: as duas versoes produzem saida identica exceto o tempo).
+    Antes esta comparacao so era feita manualmente (script de shell separado
+    citado no relatorio); aqui ela roda toda vez que o CSV e reprocessado."""
+    for carga in CARGA_ORDEM:
+        seq = where(rows, grupo="tempos", carga=carga, binario="fire_seq")
+        par = where(rows, grupo="tempos", carga=carga, binario="fire_omp_static")
+        if not seq or not par:
+            continue
+        cks_seq = {r["checksum"] for r in seq}
+        cks_par = {r["checksum"] for r in par}
+        if cks_seq != cks_par:
+            print(f"[aviso] tempos/{carga}: checksum seq {cks_seq} != checksum par {cks_par} "
+                  f"-- versoes divergem!", file=sys.stderr)
+        campos_extra = ("total_ignicoes", "pico_passo", "pico_qtd")
+        for campo in campos_extra:
+            v_seq = {r[campo] for r in seq}
+            v_par = {r[campo] for r in par}
+            if v_seq != v_par:
+                print(f"[aviso] tempos/{carga}: campo '{campo}' difere entre seq {v_seq} "
+                      f"e par {v_par}", file=sys.stderr)
+
+
+def carga_stats(rows, carga):
+    """Agrega o que tabela_tempos/tabela_speedup/tabela_vazao/
+    tabela_speedup_corrigido calculavam cada uma por conta propria a partir
+    do grupo 'tempos': tempo mediano seq/par, T nominal, dimensoes da
+    entrada e numero de passos. Devolve None se faltar algum dos dois
+    binarios para essa carga."""
+    seq = where(rows, grupo="tempos", carga=carga, binario="fire_seq")
+    par = where(rows, grupo="tempos", carga=carga, binario="fire_omp_static")
+    if not seq or not par:
+        return None
+    t_seq, t_par = median_tempo(seq), median_tempo(par)
+    T = par[0]["T_arquivo"]
+    L, C = get_lc(par[0]["entrada"])
+    passos = par[0]["passos"]
+    return {"t_seq": t_seq, "t_par": t_par, "T": T, "L": L, "C": C, "passos": passos}
 
 
 def fmt_int(n):
@@ -142,15 +198,13 @@ def write_dat(nome, cabecalho, linhas):
 def tabela_tempos(rows):
     linhas_tex, linhas_dat_seq, linhas_dat_par = [], [], []
     for carga in CARGA_ORDEM:
-        seq = where(rows, grupo="tempos", carga=carga, binario="fire_seq")
-        par = where(rows, grupo="tempos", carga=carga, binario="fire_omp_static")
-        if not seq or not par:
+        stats = carga_stats(rows, carga)
+        if stats is None:
             print(f"[aviso] tempos: faltam dados para carga={carga}", file=sys.stderr)
             continue
-        t_seq, t_par = median_tempo(seq), median_tempo(par)
-        T = par[0]["T_arquivo"]
-        L, C = get_lc(par[0]["entrada"])
-        passos = par[0]["passos"]
+        t_seq, t_par, T, L, C, passos = (
+            stats["t_seq"], stats["t_par"], stats["T"], stats["L"], stats["C"], stats["passos"]
+        )
         atualizacoes_m = round(L * C * passos / 1e6)
         linhas_tex.append(
             f"{CARGA_LABEL[carga]} & {atualizacoes_m}~M & {T} & "
@@ -168,12 +222,10 @@ def tabela_tempos(rows):
 def tabela_speedup(rows):
     linhas = []
     for carga in CARGA_ORDEM:
-        seq = where(rows, grupo="tempos", carga=carga, binario="fire_seq")
-        par = where(rows, grupo="tempos", carga=carga, binario="fire_omp_static")
-        if not seq or not par:
+        stats = carga_stats(rows, carga)
+        if stats is None:
             continue
-        t_seq, t_par = median_tempo(seq), median_tempo(par)
-        T = par[0]["T_arquivo"]
+        t_seq, t_par, T = stats["t_seq"], stats["t_par"], stats["T"]
         S = t_seq / t_par
         E = S / T
         linhas.append(f"{CARGA_LABEL[carga]} & {T} & {fmt_dec(S, 3)} & {fmt_dec(E, 3)} \\\\")
@@ -185,14 +237,12 @@ def tabela_speedup(rows):
 def tabela_vazao(rows):
     linhas_tex, linhas_dat = [], []
     for carga in CARGA_ORDEM:
-        seq = where(rows, grupo="tempos", carga=carga, binario="fire_seq")
-        par = where(rows, grupo="tempos", carga=carga, binario="fire_omp_static")
-        if not seq or not par:
+        stats = carga_stats(rows, carga)
+        if stats is None:
             continue
-        t_seq, t_par = median_tempo(seq), median_tempo(par)
-        T = par[0]["T_arquivo"]
-        L, C = get_lc(par[0]["entrada"])
-        passos = par[0]["passos"]
+        t_seq, t_par, T, L, C, passos = (
+            stats["t_seq"], stats["t_par"], stats["T"], stats["L"], stats["C"], stats["passos"]
+        )
         celulas_m = L * C * passos / 1e6
         vaz_seq = celulas_m / t_seq
         vaz_par = celulas_m / t_par
@@ -210,7 +260,7 @@ def tabela_vazao(rows):
 # Tabela 4 -- independência do número de threads (carga média)
 def tabela_threads_det(rows):
     linhas = []
-    for T in (1, 2, 4, 8, 16):
+    for T in T_VALORES_PADRAO:
         grupo = where(rows, grupo="threads_det", carga="media", T_arquivo=T)
         if not grupo:
             linhas.append(f"{T}  & \\TODO{{}} & \\TODO{{}} & \\TODO{{}} \\\\")
@@ -232,18 +282,22 @@ def tabela_threads_det(rows):
 # ---------------------------------------------------------------------------
 # Tabela 12 -- varredura de T (carga grande)
 def tabela_varredura(rows):
-    t_seq_rows = where(rows, grupo="tempos", carga="grande", binario="fire_seq")
-    if not t_seq_rows:
+    stats_grande = carga_stats(rows, "grande")
+    if stats_grande is None:
         print("[erro] varredura_T: falta tempo sequencial da carga grande (grupo 'tempos')", file=sys.stderr)
         return
-    t_seq = median_tempo(t_seq_rows)
+    t_seq = stats_grande["t_seq"]
 
     linhas, linhas_dat = [], []
-    for T in (1, 2, 4, 8, 16):
+    for T in T_VALORES_PADRAO:
         grupo = where(rows, grupo="varredura_T", carga="grande", T_arquivo=T)
         if not grupo:
             linhas.append(f"{T}  & \\TODO{{}} & \\TODO{{}} & \\TODO{{}} \\\\")
             continue
+        # mesmo tipo de garantia de determinismo aplicada em threads_det (Tabela 4):
+        # total_ignicoes/pico/checksum nao deveriam variar entre as repeticoes
+        # de um mesmo T aqui, e o checksum tampouco deveria variar entre T's
+        check_determinism(grupo, f"varredura_T T={T}")
         t_par = median_tempo(grupo)
         S = t_seq / t_par
         E = S / T
@@ -251,6 +305,10 @@ def tabela_varredura(rows):
         linhas_dat.append(f"{T}\t{t_par:.6f}\t{S:.4f}\t{E:.4f}")
     write_tex("tab_varredura.tex", linhas)
     write_dat("fig_varredura.dat", "T\ttempo\tspeedup\teficiencia", linhas_dat)
+
+    checksums = {r["T_arquivo"]: r["checksum"] for r in where(rows, grupo="varredura_T", carga="grande")}
+    if len(set(checksums.values())) > 1:
+        print(f"[aviso] varredura_T: checksum difere entre valores de T: {checksums}", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -262,12 +320,18 @@ def tabela_schedules(rows):
         "dynamic_1024": "dynamic, 1024", "guided": "guided",
     }
     linhas = []
-    dat_por_T = {T: [] for T in (2, 4, 8, 16)}
+    dat_por_T = {T: [] for T in T_VALORES_SCHEDULES}
+    checksums_todos = {}
     for sc in schedules:
         celulas = []
-        for T in (2, 4, 8, 16):
+        for T in T_VALORES_SCHEDULES:
             grupo = where(rows, grupo="schedules", carga="grande", schedule=sc, T_arquivo=T)
             if grupo:
+                # cada combinacao schedule x T deveria ser tao deterministica
+                # quanto qualquer outro grupo -- schedule muda so a ordem de
+                # despacho do trabalho entre threads, nao o resultado
+                check_determinism(grupo, f"schedules {sc} T={T}")
+                checksums_todos[(sc, T)] = grupo[0]["checksum"]
                 t = median_tempo(grupo)
                 celulas.append(fmt_dec(t, 6))
                 dat_por_T[T].append(f"{t:.6f}")
@@ -277,8 +341,11 @@ def tabela_schedules(rows):
         linhas.append(f"\\texttt{{{schedule_label[sc]}}} & " + " & ".join(celulas) + " \\\\")
     write_tex("tab_schedules.tex", linhas)
 
-    linhas_dat = [f"{T}\t" + "\t".join(dat_por_T[T]) for T in (2, 4, 8, 16)]
+    linhas_dat = [f"{T}\t" + "\t".join(dat_por_T[T]) for T in T_VALORES_SCHEDULES]
     write_dat("fig_schedules.dat", "T\t" + "\t".join(schedules), linhas_dat)
+
+    if len(set(checksums_todos.values())) > 1:
+        print(f"[aviso] schedules: checksum difere entre schedule/T: {checksums_todos}", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -318,12 +385,10 @@ def tabela_monothread(rows):
 def tabela_speedup_corrigido(rows, fatores_monothread):
     linhas_tex, linhas_dat = [], []
     for carga in CARGA_ORDEM:
-        seq = where(rows, grupo="tempos", carga=carga, binario="fire_seq")
-        par = where(rows, grupo="tempos", carga=carga, binario="fire_omp_static")
-        if not seq or not par:
+        stats = carga_stats(rows, carga)
+        if stats is None:
             continue
-        t_seq, t_par = median_tempo(seq), median_tempo(par)
-        T = par[0]["T_arquivo"]
+        t_seq, t_par, T = stats["t_seq"], stats["t_par"], stats["T"]
         S_medido = t_seq / t_par
 
         if carga in fatores_monothread:
@@ -360,6 +425,7 @@ def main():
     rows = load_runs(CSV_PATH)
     print(f"[info] {len(rows)} execuções carregadas de {CSV_PATH.relative_to(ROOT) if CSV_PATH.is_relative_to(ROOT) else CSV_PATH}")
 
+    checar_seq_par(rows)
     tabela_tempos(rows)
     tabela_speedup(rows)
     tabela_vazao(rows)
