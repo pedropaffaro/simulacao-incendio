@@ -529,16 +529,17 @@ int main(int argc, char *argv[]) {
     {
         while (passo_atual < P && cnt.em_chamas > 0) {
             // Ativação das contenções
-            /* Ativa as zonas de contenção agendadas para o passo_atual em paralelo.
-            O `simd` aqui só produz código vetorizado quando compilado com -march=native
-            (requer AVX2 para a escrita condicional mascarada; o alvo x86-64 padrão da
-            Tabela 4 não tem essa instrução). Sem -march=native a diretiva é um no-op
-            seguro: o compilador simplesmente ignora o pedido de vetorização. */
+            /* Ativa as zonas de contenção agendadas para o passo_atual em paralelo
+            O corpo do loop é escrito em forma branchless (sem if), pra em vez de pular a escrita quando a condição é falsa,
+            sempre escreve, selecionando entre o novo estado e o estado atual (seguro porque reescrever o mesmo valor não
+            tem efeito). Isso evita a necessidade de masked-store de hardware (que só existe a partir de AVX2), então o simd
+            vetoriza usando blend, já com as flags padrão do Makefile (`-O2`, x86-64 baseline), sem exigir-march=native
+            O `&` no lugar de `&&` é proposital, pra evitar o curto-circuito que reintroduziria controle de fluxo
+            e quebraria a vetorização */
             #pragma omp for simd schedule(SCHED)
                 for (long long i = 0; i < total_celulas; i++) {
-                    if (celulas.ativacao[i] == passo_atual && celulas.estado_atual[i] == ESTADO_INTACTA) {
-                        celulas.estado_atual[i] = ESTADO_CONTENCAO;
-                    }
+                    int deve_ativar = (celulas.ativacao[i] == passo_atual) & (celulas.estado_atual[i] == ESTADO_INTACTA);
+                    celulas.estado_atual[i] = deve_ativar ? ESTADO_CONTENCAO : celulas.estado_atual[i];
                 }
 
             // Próximo estado e estatísticas
