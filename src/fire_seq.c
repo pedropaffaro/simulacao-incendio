@@ -112,17 +112,6 @@ typedef struct {
     int total_ignicoes;
 } COUNTERS;
 
-/* Aplica a ativação de zona de contenção numa célula
-Só muda alguma coisa se ela estava intacta, os outros estados passam direto sem efeito */
-ESTADO_CODIGO estado_apos_ativacao(ESTADO_CODIGO estado) {
-    switch (estado) {
-        case ESTADO_INTACTA:
-            return ESTADO_CONTENCAO;
-        default:
-            return estado;
-    }
-}
-
 /* Devolve o multiplicador de combustível de uma cobertura, usado no cálculo do potencial de ignição */
 int fator_cobertura(COBERTURA_CODIGO cobertura) {
     switch (cobertura) {
@@ -500,10 +489,16 @@ int main(int argc, char *argv[]) {
 
     // Pico já começa em {-1, 0} pra sair certo (-1 0) se a simulação não tiver nenhuma ignição
     while (passo_atual < P && cnt.em_chamas > 0) {
-        // Ativar zonas programadas para passo_atual
+        /* Ativa as zonas de contenção agendadas para o passo_atual
+        Corpo do laço escrito em forma branchless (sem if): em vez de pular a escrita quando a condição é falsa,
+        sempre escreve, selecionando entre o novo estado e o estado atual (seguro porque reescrever o mesmo valor
+        não tem efeito). Mesma forma usada em fire_omp.c para viabilizar #pragma omp simd (Seção 4.5 do relatório);
+        aqui não há nenhuma diretiva omp, só a reescrita aritmética, para isolar o efeito da forma branchless em si
+        do efeito do pragma. O & no lugar de && é proposital, pra evitar o curto-circuito que reintroduziria
+        controle de fluxo e poderia impedir a autovetorização do gcc mesmo sem a diretiva. */
         for (long long i = 0; i < total_celulas; i++) {
-            if (celulas.ativacao[i] == passo_atual)
-                celulas.estado_atual[i] = estado_apos_ativacao(celulas.estado_atual[i]);
+            int deve_ativar = (celulas.ativacao[i] == passo_atual) & (celulas.estado_atual[i] == ESTADO_INTACTA);
+            celulas.estado_atual[i] = deve_ativar ? ESTADO_CONTENCAO : celulas.estado_atual[i];
         }
 
         // Próximo estado e estatísticas
@@ -527,11 +522,14 @@ int main(int argc, char *argv[]) {
                     case ESTADO_INTACTA: {
                         int S = 0;
 
-                        /* Célula interna: todos os 8 vizinhos existem, dispensa checar limites da matriz (Seção 4.4) */
+                        /* Célula interna: todos os 8 vizinhos existem, dispensa checar limites da matriz (Seção 4.4).
+                        Soma reescrita em forma branchless (multiplica o peso por 0/1 em vez de somar condicionalmente),
+                        mesma forma usada em fire_omp.c para viabilizar #pragma omp simd reduction(+:S) (Seção 4.5);
+                        aqui, de novo, sem nenhuma diretiva omp. */
                         if (l > 0 && l < L - 1 && c > 0 && c < C - 1) {
                             for (int viz = 0; viz < 8; viz++) {
-                                if (celulas.estado_atual[i + deslocamento_offset[viz]] == ESTADO_EM_CHAMAS)
-                                    S += pesos_direcao[viz];
+                                int atual_em_chamas = (celulas.estado_atual[i + deslocamento_offset[viz]] == ESTADO_EM_CHAMAS);
+                                S += pesos_direcao[viz] * atual_em_chamas;
                             }
                         } else {
                             /* Célula de borda: soma o peso dos vizinhos existentes, checando os limites da matriz */

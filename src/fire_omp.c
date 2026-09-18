@@ -117,17 +117,6 @@ typedef struct {
     int total_ignicoes;
 } COUNTERS;
 
-/* Aplica a ativação de zona de contenção numa célula
-Só muda alguma coisa se ela estava intacta, os outros estados passam direto sem efeito */
-ESTADO_CODIGO estado_apos_ativacao(ESTADO_CODIGO estado) {
-    switch (estado) {
-        case ESTADO_INTACTA:
-            return ESTADO_CONTENCAO;
-        default:
-            return estado;
-    }
-}
-
 /* Devolve o multiplicador de combustível de uma cobertura, usado no cálculo do potencial de ignição */
 int fator_cobertura(COBERTURA_CODIGO cobertura) {
     switch (cobertura) {
