@@ -1,4 +1,4 @@
-# Checklist TB1 — Simulação de Incêndio 
+# Checklist TB1 — Simulação de Incêndio
 
 **Legenda:** `[x]` atendido · `[~]` parcial / com ressalva · `[ ]` não atendido
 
@@ -7,8 +7,8 @@
 ## Estrutura do projeto
 - [x] `fire_seq.c`
 - [x] `fire_omp.c`
-- [x] `Makefile` 
-- [ ] `relatorio.pdf`
+- [x] `Makefile`
+- [~] `relatorio.pdf` — ainda não exportado, mas o `main.tex` no Overleaf já cobre a maior parte do texto (Seções 1–4 e o apêndice de compilação/execução escritos; faltam as tabelas/figuras de resultados e a análise final, ver "Pendências" e "Relatório" abaixo)
 
 ---
 
@@ -29,17 +29,15 @@
 ---
 
 ## Preparação da simulação (seção 6)
-- [x] Matriz armazenada linearmente: `indice = linha * C + coluna`
+- [x] Matriz armazenada linearmente: `indice = linha * C + coluna`, calculado diretamente a partir de `l`/`c` no laço principal — **não existe mais** conversão por divisão/módulo em nenhuma das duas versões (a função antiga de índice→coordenada foi removida; ver nota na seção "Loop da simulação")
 - [x] Geração da cobertura com `rand_r(&seed) % 100` em ordem crescente (seção 6.2) — `gerar_terreno`, laço único sequencial nas duas versões
 - [x] Geração da umidade com `rand_r(&seed) % 101` imediatamente após cada cobertura (seção 6.3)
 - [x] Estados iniciais: água/solo → não combustível; vegetação/floresta → intacta (seção 6.4)
 - [x] Focos iniciais → estado em chamas com tempo correto (veg=2, floresta=4) (seção 6.5)
 - [x] Construção do vetor `ativacao[]` com menor passo por célula, -1 se sem zona (seção 6.6)
 - [x] Contagem de `combustiveis_iniciais` (vegetação + floresta) antes da simulação
-  - `fire_seq.c`: correto e **fora** do trecho cronometrado (linhas 417–437).
-  - `fire_omp.c`: correto e **fora** do trecho cronometrado (linhas 362–389, antes de
-    `t_inicio` na linha 403). Essa mesma varredura inicial preenche o histograma de estados,
-    o que cobre o caso de 0 passos (ver seção "Loop da simulação", item 3).
+  - `fire_seq.c`: correto e **fora** do trecho cronometrado (varredura logo antes de `t_inicio`, linha 496).
+  - `fire_omp.c`: correto e **fora** do trecho cronometrado — varredura paralela com `reduction` (linhas 460–483), antes de `t_inicio` na linha 510. Essa mesma varredura inicial preenche o histograma de estados, o que cobre o caso de 0 passos (ver seção "Loop da simulação", item 3).
 
 ---
 
@@ -51,8 +49,8 @@
   - [x] 3. Calcular estatísticas do próximo estado
     - `fire_seq.c`: todas as 5 contagens são acumuladas no mesmo percurso, por passo.
     - `fire_omp.c`: as mesmas 5 contagens são feitas no laço paralelo principal, junto de
-      cada transição de estado (cláusula `reduction` na linha 440), e copiadas para as
-      estatísticas finais dentro do `omp single` (linhas 521–533). Como o `reduction` de um
+      cada transição de estado (cláusula `reduction` na linha 547), e copiadas para as
+      estatísticas finais dentro do `omp single` (linha 624). Como o `reduction` de um
       `omp for` combina com o valor anterior do item original, os acumuladores `proximo_*`
       são zerados a cada passo depois da cópia.
   - [x] 4. Trocar matrizes
@@ -60,19 +58,36 @@
 - [x] Parar se sem células em chamas ou após P passos (seção 9)
 - [x] Não executar nenhum passo se já sem chamas na inicialização — garantido pela condição do `while`
 
+> **Atualização:** a função auxiliar de conversão índice→coordenada por divisão/módulo, citada
+> nas revisões anteriores deste checklist, foi **removida** das duas versões. O laço principal
+> hoje é escrito diretamente como dois `for` aninhados sobre linha (`l`) e coluna (`c`), com o
+> índice linear calculado por `i = (long long)l * C + c`, sem nenhuma divisão. A mudança vale
+> para as duas versões, não só a paralela — ambas compartilham essa e as demais otimizações do
+> laço de atualização (pré-cálculo dos pesos, caminho rápido para o interior, curto-circuito
+> quando `S == 0`). Isso já está refletido no `main.tex` (Seções 3.2 e 4.4).
+>
+> **Também atualizado:** `fire_omp.c` hoje usa a mesma `struct PICO { int passo; int quantidade; }`
+> que o sequencial (`PICO pico = {-1, 0};`, linha 495), em vez dos dois `int` soltos
+> (`pico_passo`/`pico_qtd`) de versões anteriores do arquivo. O bug antigo de inicialização
+> (`pico_passo = 0` em vez de `-1`, que imprimia `0 0` no caso sem ignição) está corrigido e
+> não existe mais nessa forma — ver seção "Cálculo dos resultados" abaixo.
+
 ---
 
 ## Cálculo do potencial de ignição (seção 8)
 - [x] Considerar os 8 vizinhos de Moore
-- [x] Ignorar vizinhos fora da matriz — `fire_omp.c` usa caminho rápido sem teste de borda para o interior e caminho genérico com teste nas bordas (linhas 452–470)
+- [x] Ignorar vizinhos fora da matriz — `fire_omp.c` usa caminho rápido sem teste de borda para o interior e caminho genérico com teste nas bordas (em torno da linha 555–575); `fire_seq.c` replica a mesma separação interior/borda
 - [x] Apenas vizinhos em chamas contribuem
 - [x] `prop_linha = linha_celula - linha_vizinho` / `prop_coluna = coluna_celula - coluna_vizinho`
-  - Em `fire_omp.c` isso é pré-computado como `peso_vizinho(-dv, -dc, ...)` (linha 399), que é
-    algebricamente idêntico, pois `linha_vizinho = linha_celula + dv`.
+  - Pré-computado como `peso_vizinho(-dv, -dc, ...)` (perto da linha 500 em `fire_omp.c`, e do
+    trecho equivalente em `fire_seq.c`), algebricamente idêntico, pois `linha_vizinho = linha_celula + dv`.
 - [x] Peso básico: 10 (ortogonal) ou 7 (diagonal)
 - [x] Alinhamento: `A = prop_linha * vento_linha + prop_coluna * vento_coluna`
 - [x] `Pv = max(1, P_basico + intensidade * A)`
 - [x] `S = Σ Pv` de todos os vizinhos em chamas
+  - No interior da matriz, essa soma agora também é vetorizada: `#pragma omp simd
+    reduction(+:S)` (linha 560 de `fire_omp.c`) sobre os 8 deslocamentos pré-calculados. Item
+    novo desde a última revisão deste checklist — ver seção "Versão paralela" abaixo.
 - [x] `I = (S * fator_combustivel * (100 - umidade)) / 100` (aritmética inteira)
 - [x] Ignição se `I >= LIMIAR`
   - `fire_omp.c` usa `if (S > 0 && potencial... >= LIMIAR)`. Equivalente, pois `S == 0 ⇒ I == 0`
@@ -87,18 +102,21 @@
 - [x] `pico_ignicoes`: maior quantidade de novas ignições por passo; empate → primeiro passo
   (comparação estrita `>` nas duas versões)
 - [x] `pico_ignicoes: -1 0` se nenhuma ignição ocorreu
-  - `fire_seq.c` linha 442: `PICO pico = {-1, 0};` → imprime `-1 0`.
-  - `fire_omp.c` linha 409: `int pico_passo = -1;` → imprime `-1 0`. Estava `0` até esta
-    correção, o que imprimia `0 0` e era a única divergência de *resultado* entre as versões.
+  - `fire_seq.c`: `PICO pico = {-1, 0};` → imprime `-1 0`.
+  - `fire_omp.c`: hoje também usa `PICO pico = {-1, 0};` (mesma struct do sequencial, linha
+    495) → imprime `-1 0`. O bug antigo (inicialização em `0`, que imprimia `0 0`) foi corrigido
+    e a correção se mantém no código atual.
   - A comparação é estrita nas duas versões (`novos_incendios > pico.quantidade` no
-    sequencial, `ignicoes_no_passo > pico_qtd` na paralela), então empate mantém o primeiro
+    sequencial, `ignicoes_no_passo > pico.quantidade` na paralela), então empate mantém o primeiro
     passo também quando existe ignição.
   - Verificado nos casos sem nenhuma ignição (LIMIAR alto), com P = 0 e com F = 0, cada um
     com T = 1, 4 e 8.
 - [x] `percentual_queimado = 100 * (queimadas + em_chamas) / combustiveis_iniciais`
 - [x] `percentual_protegido = 100 * contencao / combustiveis_iniciais`
 - [x] Ambos os percentuais = 0 se `combustiveis_iniciais == 0`
-- [x] Checksum calculado **fora** do trecho cronometrado e sequencialmente (seção 10)
+- [x] Checksum calculado **fora** do trecho cronometrado e sequencialmente (seção 10) —
+  `fire_seq.c` linhas 640–643, `fire_omp.c` linhas 663–666, byte a byte idênticos entre os
+  dois arquivos
 
 ---
 
@@ -115,57 +133,73 @@
 - [x] Cronometrado: ativação de zonas, propagação, atualização de estados e tempos, estatísticas, troca de matrizes, condição de parada
 - [x] Não cronometrado: leitura, validação, alocação, geração de cobertura/umidade, mapa de ativação, focos, checksum, percentuais, impressão
 
-> As duas versões medem o mesmo trabalho por passo. `t_inicio` (`fire_seq.c` linha 439,
-> `fire_omp.c` linha 403) fica **depois** da contagem inicial de combustíveis/chamas e da
-> montagem das tabelas `deslocamento_offset`/`pesos_direcao` (`fire_omp.c` linhas 362–400), e
-> o laço medido inclui as 5 contagens de estatísticas nas duas versões. `t_fim` está em
-> `fire_seq.c` linha 561 e `fire_omp.c` linha 547; checksum (linhas 564–568 e 553–557),
-> percentuais e impressão ficam fora dos dois trechos.
+> As duas versões medem o mesmo trabalho por passo. `t_inicio` (`fire_seq.c` linha 496,
+> `fire_omp.c` linha 510) fica **depois** da contagem inicial de combustíveis/chamas e da
+> montagem das tabelas `deslocamento_offset`/`pesos_direcao`, e o laço medido inclui as 5
+> contagens de estatísticas nas duas versões. `t_fim` está em `fire_seq.c` linha 636 e
+> `fire_omp.c` linha 659; checksum, percentuais e impressão ficam fora dos dois trechos.
 
 ---
 
 ## Versão sequencial — `fire_seq.c` (seção 13)
 - [x] Sem diretivas OpenMP de paralelização — nenhum `#pragma omp` no arquivo
-- [x] `omp_get_wtime()` permitido apenas para medir tempo (linhas 439 e 561)
+- [x] `omp_get_wtime()` permitido apenas para medir tempo (linhas 496 e 636)
+- [x] Compartilha com a versão paralela as otimizações do laço de atualização (pré-cálculo dos
+  pesos, caminho rápido para o interior, curto-circuito, índice linear direto sem divisão) —
+  já não são exclusivas da versão paralela, ver nota em "Loop da simulação"
 
 ---
 
 ## Versão paralela — `fire_omp.c` (seção 13)
-- [x] Usa T threads — `num_threads(T)` nas duas regiões paralelas (linhas 371 e 421)
-- [x] Região paralela persistente (não abrir/fechar a cada passo) — aberta na linha 421, `while` dos passos dentro dela
-- [x] Ativação de zonas paralelizada — `omp for schedule(static)` (linhas 432–437)
-- [x] Atualização da matriz paralelizada com `omp for` — `omp for collapse(2)` (linha 440)
-- [x] `simd` aplicado onde pertinente — nos dois laços de varredura linear do arquivo:
-  - contagem inicial: `#pragma omp parallel for simd` (linha 371);
-  - ativação das zonas: `#pragma omp for simd schedule(static)` (linha 432), que é uma
-    varredura linear com store condicional, sem dependência entre iterações.
-  - O laço de propagação ficou **de fora**: o acesso aos vizinhos é indireto
-    (`deslocamento_offset`/`pesos_direcao`) e há desvios por estado, então o vetorizador
-    recusa (`missed: not vectorized: control flow in loop`).
-  - Efeito conferido com `-fopt-info-vec-optimized`: com as flags do `Makefile` (`-O2`) nenhum
-    laço vetoriza e o `simd` fica sem efeito prático; com `-O2 -march=native` o laço de ativação
-    vetoriza (32 B); com `-O3` o da contagem inicial (16 B); com `-O3 -march=native` os dois
-    (32 B). Em todos esses conjuntos de flags a saída segue idêntica à do sequencial.
-- [x] Reduções para contadores (sem `critical`/`atomic` no laço principal) — `reduction(+:...)` nas linhas 371 e 440; nenhum `critical`/`atomic` no código
-- [x] Troca de matrizes sem condição de corrida — dentro de `omp single` (linhas 511–543), com barreira implícita antes (fim do `omp for`) e depois (fim do `single`)
-- [x] Condição de parada compartilhada corretamente — `passo_atual` e `celulas_em_chamas` atualizados no `single`; a barreira implícita do `single` implica *flush*, então todas as threads reavaliam o `while` com os mesmos valores
-- [x] Resultado independente do número de threads — verificado com T = 1, 2, 4, 8: `total_ignicoes`, `pico` e `checksum` idênticos em todos os casos
-- [ ] Pelo menos dois `schedule` comparados (ex: `static` vs `dynamic`) — o código tem **`schedule(static)` fixo** (linhas 432 e 440); não há parametrização nem registro de comparação
-  - Sugestão: `#ifndef SCHED` `#define SCHED static` `#endif` + `schedule(SCHED)`, gerando dois
-    binários com `-DSCHED='dynamic,1024'`, e reportar na tabela 8 do relatório.
+- [x] Usa T threads — `num_threads(T)` nas duas regiões paralelas (linhas 465 e 525)
+- [x] Região paralela persistente (não abrir/fechar a cada passo) — aberta na linha 525, `while` dos passos dentro dela
+- [x] Ativação de zonas paralelizada — `omp for simd schedule(SCHED)` (linha 539)
+- [x] Atualização da matriz paralelizada com `omp for` — `omp for collapse(2) schedule(SCHED)` (linha 547)
+- [x] `simd` aplicado onde pertinente — em **três** pontos do arquivo (um a mais que na última
+  revisão deste checklist):
+  1. contagem inicial: `#pragma omp parallel for ... schedule(SCHED)` com `simd` implícito via
+     vetorização automática do laço de reduções (linha 465);
+  2. ativação das zonas: `#pragma omp for simd schedule(SCHED)` (linha 539), varredura linear
+     com *store* condicional (branchless), sem dependência entre iterações;
+  3. **novo:** soma dos vizinhos em chamas no caminho rápido do interior:
+     `#pragma omp simd reduction(+:S)` (linha 560), sobre os 8 deslocamentos pré-calculados.
+  - Efeito prático continua dependendo das flags: com `-O2` (flags do `Makefile`) a vetorização
+    manual do `simd` ainda não é garantida pelo gcc em todos os três pontos; com
+    `-march=native`/`-O3` mais laços vetorizam de fato. Isso é discutido no `main.tex` (Seção
+    4.4) e não muda o resultado da simulação em nenhum conjunto de flags testado.
+- [x] Reduções para contadores (sem `critical`/`atomic` no laço principal) — `reduction(+:...)` nas linhas 465 e 547; nenhum `critical`/`atomic` no código
+- [x] Troca de matrizes sem condição de corrida — dentro de `omp single` (linha 624), com barreira implícita antes (fim do `omp for`) e depois (fim do `single`)
+- [x] Condição de parada compartilhada corretamente — `passo_atual` e os contadores de `cnt` atualizados no `single`; a barreira implícita do `single` implica *flush*, então todas as threads reavaliam o `while` com os mesmos valores
+- [x] Resultado independente do número de threads — verificado com T = 1, 2, 4, 8, 16: `total_ignicoes`, `pico` e `checksum` idênticos em todos os casos (ver Tabela 4 do relatório, grupo `threads_det`)
+- [x] **Pelo menos dois `schedule` comparados — RESOLVIDO.** O `Makefile` agora tem um alvo
+  `experimentos` que compila 4 binários a partir do mesmo `fire_omp.c`, variando apenas a
+  macro de compilação:
+  - `fire_omp_static` (`-DSCHED="static"`, também o padrão de `fire_omp` sem a macro)
+  - `fire_omp_static_1024` (`-DSCHED="static,1024"`)
+  - `fire_omp_dynamic_1024` (`-DSCHED="dynamic,1024"`)
+  - `fire_omp_guided` (`-DSCHED="guided"`)
+
+  O código usa `#ifndef SCHED / #define SCHED static / #endif` e `schedule(SCHED)` nos dois
+  laços paralelos relevantes, exatamente a sugestão que estava registrada como pendência na
+  última revisão. `scripts/run_benchmarks.sh` já roda os 4 binários contra a carga grande em
+  T = 2, 4, 8, 16 (grupo `schedules`) para alimentar a Tabela 13 do relatório — falta só
+  **executar** essa parte do script no cluster (ver "Pendências" abaixo).
 - [x] `default(none)` nas regiões paralelas relevantes
-  - [x] Região principal (linha 421): `default(none)` com cláusula `shared` explícita.
-  - [x] `parallel for` da contagem inicial (linha 371): `default(none) shared(total_celulas, grade)`.
-    A lista precisa de `grade` (acesso a `cobertura` e `estado_atual`) e de `total_celulas`; `T`
+  - [x] Região principal (linha 525): `default(none)` com cláusula `shared` explícita.
+  - [x] `parallel for` da contagem inicial (linha 465): `default(none) shared(total_celulas, celulas)`.
+    A lista precisa de `celulas` (acesso a `cobertura` e `estado_atual`) e de `total_celulas`; `T`
     só aparece em `num_threads(T)`, avaliado fora da região, e as variáveis da `reduction` são
-    determinadas pela própria cláusula. Sem elas o gcc acusa `not specified in enclosing
-    parallel` — foi um dos erros do commit da main.
+    determinadas pela própria cláusula.
   - Nota de sintaxe: a cláusula `default` **não** é aceita em `omp for` (só em `parallel`,
-    `teams` e `task`). Era o outro erro daquele commit.
-  - Nota de portabilidade: `VIZINHOS` aparece em `shared(...)` e é `static const`. Isso é
-    aceito a partir do OpenMP 5.0 (gcc ≥ 9, verificado no gcc 13.3), mas era **erro de
-    compilação** em versões anteriores, em que variáveis `const` eram *predetermined shared*.
-    Se o ambiente de avaliação usar gcc antigo, remover `VIZINHOS` da lista.
+    `teams` e `task`).
+  - [x] **Nota de portabilidade — RESOLVIDA.** `VIZINHOS` (o array `static const` com os 8
+    vizinhos de Moore) não entra mais diretamente na cláusula `shared(...)` da região
+    persistente. O código agora copia o array para um ponteiro local não-`const` antes da
+    região paralela (`const DIRECAO *vizinhos = VIZINHOS;`, linha 524) e compartilha esse
+    ponteiro (`vizinhos`) em vez do array original. Isso evita depender do comportamento de
+    OpenMP 5.0 para variáveis `const` (*predetermined shared*), que era erro de compilação em
+    gcc mais antigos — não é mais necessário remover nada da cláusula `shared` mesmo em
+    ambientes com gcc anterior à versão 9.
 
 ---
 
@@ -183,36 +217,138 @@
 
 E4 também confirmou invariância a T (1, 2, 4, 8): mesmo `checksum` `5674319175939320070`.
 
-Re-verificado depois do alinhamento do trecho cronometrado e da correção do `pico_passo`: as 3
-entradas de `tests/in` e as 3 de `entrada_carga_*` continuam idênticas ao sequencial exceto pelo
-tempo, inclusive com o campo T da entrada variado em 1, 2, 4 e 8, e os casos de borda P = 0,
-F = 0 e sem ignição agora batem em **todos** os campos. Nenhuma divergência de resultado entre
-as versões permanece conhecida. `make test` passa 3/3 nas duas versões, e a versão paralela
-roda limpa sob `-fsanitize=address,undefined`.
+Re-verificado depois da remoção da conversão índice→coordenada e da migração de `fire_omp.c`
+para a mesma `struct PICO` do sequencial: as 3 entradas de `tests/in` e as 3 de
+`entrada_carga_*` continuam idênticas ao sequencial exceto pelo tempo, inclusive com o campo T
+da entrada variado em 1, 2, 4, 8 e 16, e os casos de borda P = 0, F = 0 e sem ignição continuam
+batendo em **todos** os campos. Essas mudanças de código (Seção 3.2/4.4 do relatório) alteram
+apenas a forma como o índice é calculado e como o pico é armazenado, não o modelo em si, então
+não era esperada — e não foi observada — nenhuma divergência de `checksum`/`total_ignicoes`/
+`pico_ignicoes` em relação às medições anteriores. Nenhuma divergência de resultado entre as
+versões permanece conhecida. `make test` passa 3/3 nas duas versões.
 
-> Nenhuma medição de speedup foi feita: o contêiner de verificação tem **1 núcleo** (`nproc = 1`).
-> Os tempos precisam ser coletados na máquina de experimentos.
+> Nenhuma medição de speedup foi feita ainda com o código atual: as medições de tempo
+> anteriores foram feitas com uma versão de `fire_seq.c` que ainda tinha a conversão de
+> índice por divisão, removida desde então (ver "Loop da simulação"), então os números de
+> tempo antigos **não valem mais** e não devem ser reaproveitados — só os resultados de
+> corretude (checksum/ignições/pico) continuam válidos, porque não dependem de como o índice é
+> calculado.
+
+---
+
+## Scripts de benchmarking — o que cada um faz
+
+Os dois scripts abaixo já estão prontos e não precisam de nenhuma alteração; o que falta é
+**executá-los**, nessa ordem, no cluster (ver "Pendências").
+
+### 1. `scripts/run_benchmarks.sh` — roda os binários e grava o CSV bruto
+
+```
+bash scripts/run_benchmarks.sh [REPS] [DET_REPS]
+```
+
+- `REPS` (padrão 10): repetições por configuração cronometrada normal (tempos, varredura de T,
+  comparação de schedules).
+- `DET_REPS` (padrão 3): repetições do grupo de independência de threads (Tabela 4), onde o
+  que importa é a igualdade de checksum/ignições/pico entre T's, não a estatística de tempo.
+- **Pré-requisito:** `make experimentos` já executado na raiz do projeto (precisa existir
+  `./fire_seq`, `./fire_omp_static`, `./fire_omp_static_1024`, `./fire_omp_dynamic_1024` e
+  `./fire_omp_guided`) e uma pasta `entradas/` com os arquivos de carga:
+  - `entrada_carga_pequena.txt` (T=4 no arquivo) e `entrada_carga_pequena_T1.txt`
+  - `entrada_carga_media.txt` (T=8) e `entrada_carga_media_T{1,2,4,16}.txt`
+  - `entrada_carga_grande.txt` (T=8) e `entrada_carga_grande_T{1,2,4,16}.txt`
+  - `entrada_sem_ignicao.txt`
+
+  As variações `_T{1,2,4,16}` são cópias da mesma carga com **apenas o campo T da primeira
+  linha alterado**, para poder variar o número de threads sem tocar no resto da entrada
+  (necessário porque `fire_omp` lê T do próprio arquivo, não de argumento ou variável de
+  ambiente).
+- **Saída:** `results/raw/runs.csv`, uma linha por execução, com os 12 campos de saída do
+  programa mais metadados (`grupo`, `carga`, `entrada`, `binario`, `schedule`, `T_arquivo`,
+  `rep`). Execuções sucessivas só **acrescentam** linhas ao CSV, sem sobrescrevê-lo — se for
+  rodar de novo do zero, apagar `results/raw/runs.csv` antes.
+- O script roda 6 grupos de experimentos em sequência (tempos base, independência de T,
+  varredura de T, comparação de schedules, caso sem ignição, isolamento monothread com
+  `taskset -c 0`) e falha cedo, com mensagem no `stderr`, se algum binário ou a pasta
+  `entradas/` estiver faltando.
+
+### 2. `scripts/process_results.py` — processa o CSV e gera as tabelas/figuras do relatório
+
+```
+python3 scripts/process_results.py [caminho/para/runs.csv]
+```
+
+(sem argumento, usa `results/raw/runs.csv` por padrão)
+
+- Lê o CSV gerado pelo script acima.
+- Aplica a **mediana** como filtro estatístico sobre as repetições de cada configuração (não a
+  média — mais robusto a *outliers* de uma execução isolada).
+- Confere determinismo: avisa no `stderr` (sem interromper a execução) se `checksum`,
+  `total_ignicoes` ou `pico_ignicoes` variarem onde deveriam ser constantes — tanto entre
+  `fire_seq` e `fire_omp_static` (grupo `tempos`) quanto entre execuções da paralela com
+  T/schedule diferentes (grupos `threads_det`, `varredura_T`, `schedules`). Se aparecer algum
+  aviso desses, **não ignorar** — indica uma divergência de resultado que a seção de validação
+  do relatório não deveria admitir.
+- **Gera em `results/plot/`:**
+  - `tab_tempos.tex`, `tab_speedup.tex`, `tab_vazao.tex`, `tab_threads_det.tex`,
+    `tab_varredura.tex`, `tab_schedules.tex`, `tab_monothread.tex`,
+    `tab_speedup_corrigido.tex` — cada um contendo **só as linhas de corpo** da tabela
+    correspondente (entre `\midrule` e `\bottomrule`), já formatadas em LaTeX.
+  - `fig_tempos_seq.dat`, `fig_tempos_par.dat`, `fig_vazao.dat`, `fig_varredura.dat`,
+    `fig_schedules.dat`, `fig_speedup.dat` — dados para `\addplot table {...}` do `pgfplots`.
+
+### Onde colocar os arquivos gerados
+
+**Importante para quem for atualizar o relatório:** os arquivos de `results/plot/*.tex` e
+`*.dat` devem ser copiados **diretamente para a pasta `plot/` do projeto no Overleaf**, sem
+renomear nada. O `main.tex` já está preparado para isso: cada tabela usa
+`\IfFileExists{plot/tab_X.tex}{\input{plot/tab_X.tex}}{...}`, então assim que o arquivo
+correspondente existir na pasta `plot/` do Overleaf, a tabela é **preenchida automaticamente**
+na próxima compilação, sem precisar editar o `.tex` manualmente. O mesmo vale para a Figura 1
+(tempos), que já lê `fig_tempos_seq.dat`/`fig_tempos_par.dat` do mesmo jeito. **Atenção:** hoje
+só existe no `main.tex` a Figura 1 (tempos); as Figuras 2 e 3 (vazão e speedup/varredura ou
+schedules, que os `.dat` correspondentes já preparam os dados para) ainda não foram montadas
+como `\begin{figure}` no relatório — isso entra na lista de pendências do relatório abaixo.
 
 ---
 
 ## Pendências, em ordem de prioridade
 
-1. **Parametrizar e comparar dois `schedule`** — requisito explícito da seção 13 e
-   insumo da tabela 8 e da figura 3 do relatório.
-2. **Coletar os tempos** em máquina multicore e preencher as tabelas 5–8 e as figuras 1–3.
-3. **Decidir as flags de compilação do experimento**: com `-O2` (atual) o `simd` não tem efeito
-   nenhum; `-O3` e/ou `-march=native` fazem os laços vetorizarem. A escolha precisa ser
-   registrada na tabela 4 do relatório, já que afeta os tempos e o speedup.
+1. **Rodar `scripts/run_benchmarks.sh` no cluster** para gerar `results/raw/runs.csv` com o
+   código atual (já com o índice linear sem divisão e o `SCHED` parametrizado nas duas
+   versões). As medições de tempo antigas não valem mais (ver nota em "Validação sequencial ×
+   paralela"), então isso não é opcional mesmo tendo rodado antes.
+2. **Rodar `scripts/process_results.py` em cima desse CSV** para gerar as tabelas/figuras e
+   copiar o conteúdo de `results/plot/` para a pasta `plot/` do Overleaf (ver seção anterior).
+   Conferir os avisos de determinismo no `stderr` antes de dar como concluído.
+3. **Montar as Figuras 2 e 3** no `main.tex` (vazão e speedup/eficiência), hoje ausentes —
+   só existe a Figura 1 (tempos). Os dados (`fig_vazao.dat`, `fig_varredura.dat`,
+   `fig_schedules.dat`, `fig_speedup.dat`) já são gerados pelo script; falta só o
+   `\begin{figure}`/`\begin{tikzpicture}` no relatório, seguindo o mesmo padrão da Figura 1.
+4. **Atualizar o texto da Seção 8 (Análise dos resultados) e a Conclusão** com os números reais
+   assim que as tabelas forem preenchidas — hoje esses trechos estão marcados como `\TODO{}`
+   em vermelho no `main.tex`, porque a análise anterior (decomposição do speedup em "fator
+   monothread" atribuído à conversão de índice) não se aplica mais ao código atual: essa
+   otimização hoje é compartilhada pelas duas versões, então o "fator monothread" esperado é
+   próximo de 1, e é preciso reescrever a análise a partir dos números novos, não só colar as
+   tabelas.
 
 ---
 
 ## Relatório
-- [~] Descrição da solução sequencial — seção 3, estrutura pronta, texto a escrever
-- [~] Descrição da solução paralela e estratégia de paralelização — seção 4, com as
-      otimizações do código já identificadas e listadas
-- [~] Validação da versão paralela contra a sequencial — seção 5, script e tabelas prontos
-- [ ] Ambiente experimental (hardware, compilador, flags) — tabela 4, a preencher
-- [ ] Tabela de tempos para diferentes entradas/threads — tabela 5, a preencher
-- [ ] Speedup e eficiência — tabela 6, formulário pronto
-- [~] Gráficos — 3 figuras em `pgfplots` com dados de exemplo, a substituir
-- [~] Análise dos resultados — seção 8, roteiro de 6 eixos de análise pronto
+- [x] Descrição da solução sequencial — Seção 3, texto escrito e atualizado (sem a conversão
+      de índice por divisão, que não existe mais no código)
+- [x] Descrição da solução paralela e estratégia de paralelização — Seção 4, otimizações
+      listadas e explicitamente marcadas como compartilhadas com a versão sequencial (Seção 4.4)
+- [x] Validação da versão paralela contra a sequencial — Seção 5, script e tabela de casos prontos
+- [x] Ambiente experimental (hardware, compilador, flags) — Tabela 4/`tab:ambiente` preenchida
+      com os dados reais do cluster (Intel i7-4790, 4 físicos/8 lógicos, gcc, flags do Makefile)
+- [x] Apêndice de compilação/execução para quem for corrigir — adicionado, restrito ao que o
+      corretor de fato usa (`make all`, `./fire_seq entrada.txt`, `./fire_omp entrada.txt`),
+      sem depender dos scripts de benchmark (que não fazem parte do zip de entrega)
+- [ ] Tabela de tempos para diferentes entradas/threads — pendente da nova coleta (Pendência 1–2)
+- [ ] Speedup e eficiência — fórmulas e texto prontos, números pendentes da nova coleta
+- [~] Gráficos — só a Figura 1 (tempos) está montada; Figuras 2 e 3 pendentes (Pendência 3)
+- [ ] Análise dos resultados (Seção 8) e Conclusão — roteiro pronto, mas o texto atual está
+      marcado como `\TODO{}` porque a hipótese antiga (fator monothread ligado à conversão de
+      índice) não vale mais; reescrever a partir dos números novos (Pendência 4)
