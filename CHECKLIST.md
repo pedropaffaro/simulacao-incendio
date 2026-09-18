@@ -314,11 +314,11 @@ como `\begin{figure}` no relatório — isso entra na lista de pendências do re
 
 ## Pendências, em ordem de prioridade
 
-1. **Rodar `scripts/run_benchmarks.sh` no cluster** para gerar `results/raw/runs.csv` com o
+1. **Rodar `make experimentos` e `bash scripts/run_benchmarks.sh` no cluster** para gerar `results/raw/runs.csv` com o
    código atual (já com o índice linear sem divisão e o `SCHED` parametrizado nas duas
    versões). As medições de tempo antigas não valem mais (ver nota em "Validação sequencial ×
    paralela"), então isso não é opcional mesmo tendo rodado antes.
-2. **Rodar `scripts/process_results.py` em cima desse CSV** para gerar as tabelas/figuras e
+2. **Rodar `scripts/process_results.py`** para gerar as tabelas/figuras em cima do CSV gerado acima e
    copiar o conteúdo de `results/plot/` para a pasta `plot/` do Overleaf (ver seção anterior).
    Conferir os avisos de determinismo no `stderr` antes de dar como concluído.
 3. **Montar as Figuras 2 e 3** no `main.tex` (vazão e speedup/eficiência), hoje ausentes —
