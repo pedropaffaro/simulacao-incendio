@@ -486,6 +486,7 @@ int main(int argc, char *argv[]) {
 
     int passo_atual = 0;
     PICO pico       = {-1, 0};
+    const DIRECAO *vizinhos = VIZINHOS;
 
     // Pico já começa em {-1, 0} pra sair certo (-1 0) se a simulação não tiver nenhuma ignição
     while (passo_atual < P && cnt.em_chamas > 0) {
@@ -509,97 +510,74 @@ int main(int argc, char *argv[]) {
         for (int l = 0; l < L; l++) {
             for (int c = 0; c < C; c++) {
                 /* Índice construído diretamente de l e c, sem divisão/módulo (Seção 3.2/4.4) */
-                long long i = (long long)l * C + c;
+                long long i                 = (long long)l * C + c;
+                ESTADO_CODIGO estado_celula = (ESTADO_CODIGO)celulas.estado_atual[i];
 
-                switch (celulas.estado_atual[i]) {
-                    case ESTADO_NAO_COMBUSTIVEL: {
-                        celulas.proximo_estado[i] = ESTADO_NAO_COMBUSTIVEL;
+                if (estado_celula == ESTADO_INTACTA) {
+                    int S = 0;
+
+                    /* Célula interna: todos os 8 vizinhos existem, dispensa checar limites da matriz (Seção 4.4).
+                    Soma reescrita em forma branchless (multiplica o peso por 0/1 em vez de somar condicionalmente),
+                    mesma forma usada em fire_omp.c para viabilizar #pragma omp simd reduction(+:S) (Seção 4.5);
+                    aqui, de novo, sem nenhuma diretiva omp. */
+                    if (l > 0 && l < L - 1 && c > 0 && c < C - 1) {
+                        for (int k = 0; k < 8; k++) {
+                            int atual_em_chamas = (celulas.estado_atual[i + deslocamento_offset[k]] == ESTADO_EM_CHAMAS);
+                            S += pesos_direcao[k] * atual_em_chamas;
+                        }
+                    } else {
+                        /* Célula de borda: soma o peso dos vizinhos checando os limites da matriz */
+                        for (int k = 0; k < 8; k++) {
+                            int linha_vizinho  = l + vizinhos[k].vertical;
+                            int coluna_vizinho = c + vizinhos[k].horizontal;
+
+                            if (linha_vizinho >= 0 && linha_vizinho < L && coluna_vizinho >= 0 && coluna_vizinho < C) {
+                                long long vizinho = (long long)linha_vizinho * C + coluna_vizinho;
+                                if (celulas.estado_atual[vizinho] == ESTADO_EM_CHAMAS) {
+                                    S += pesos_direcao[k];
+                                }
+                            }
+                        }
+                    }
+
+                    /* Calcula o potencial de ignição e verifica se atinge o limiar pra pegar fogo */
+                    if (S > 0 &&
+                        potencial_ignicao(S, fator_cobertura((COBERTURA_CODIGO)celulas.cobertura[i]), celulas.umidade[i]) >= LIMIAR) {
+                        celulas.proximo_estado[i] = ESTADO_EM_CHAMAS;
+                        celulas.proximo_tempo[i]  = tempo_queima_inicial((COBERTURA_CODIGO)celulas.cobertura[i]);
+                        novos_incendios++;
+                        next_em_chamas++;
+                    } else {
+                        celulas.proximo_estado[i] = ESTADO_INTACTA;
                         celulas.proximo_tempo[i]  = 0;
-                        next_nao_comb++;
-                        break;
+                        next_intactas++;
                     }
 
-                    case ESTADO_INTACTA: {
-                        int S = 0;
+                } else if (estado_celula == ESTADO_EM_CHAMAS) {
+                    /* Decrementa o tempo de queima restante da célula */
+                    int tempo_ignicao_restante = celulas.tempo_atual[i] - 1;
 
-                        /* Célula interna: todos os 8 vizinhos existem, dispensa checar limites da matriz (Seção 4.4).
-                        Soma reescrita em forma branchless (multiplica o peso por 0/1 em vez de somar condicionalmente),
-                        mesma forma usada em fire_omp.c para viabilizar #pragma omp simd reduction(+:S) (Seção 4.5);
-                        aqui, de novo, sem nenhuma diretiva omp. */
-                        if (l > 0 && l < L - 1 && c > 0 && c < C - 1) {
-                            for (int viz = 0; viz < 8; viz++) {
-                                int atual_em_chamas = (celulas.estado_atual[i + deslocamento_offset[viz]] == ESTADO_EM_CHAMAS);
-                                S += pesos_direcao[viz] * atual_em_chamas;
-                            }
-                        } else {
-                            /* Célula de borda: soma o peso dos vizinhos existentes, checando os limites da matriz */
-                            for (int viz = 0; viz < 8; viz++) {
-                                int linha_vizinho  = l + VIZINHOS[viz].vertical;
-                                int coluna_vizinho = c + VIZINHOS[viz].horizontal;
-
-                                if (linha_vizinho < 0 || linha_vizinho >= L || coluna_vizinho < 0 || coluna_vizinho >= C)
-                                    continue;
-
-                                long long viz_idx = (long long)linha_vizinho * C + coluna_vizinho;
-
-                                if (celulas.estado_atual[viz_idx] == ESTADO_EM_CHAMAS)
-                                    S += pesos_direcao[viz];
-                            }
-                        }
-
-                        /* Curto-circuito: sem vizinho em chamas, o potencial é 0 e nunca atinge LIMIAR > 0 (Seção 4.4) */
-                        if (S == 0) {
-                            celulas.proximo_estado[i] = ESTADO_INTACTA;
-                            celulas.proximo_tempo[i]  = 0;
-                            next_intactas++;
-                            break;
-                        }
-
-                        /* Calcula o potencial de ignição e verifica se atinge o limiar pra pegar fogo */
-                        int I = potencial_ignicao(S, fator_cobertura(celulas.cobertura[i]), celulas.umidade[i]);
-
-                        if (I >= LIMIAR) {
-                            celulas.proximo_estado[i] = ESTADO_EM_CHAMAS;
-                            celulas.proximo_tempo[i]  = tempo_queima_inicial(celulas.cobertura[i]);
-                            novos_incendios++;
-                            next_em_chamas++;
-                        } else {
-                            celulas.proximo_estado[i] = ESTADO_INTACTA;
-                            celulas.proximo_tempo[i]  = 0;
-                            next_intactas++;
-                        }
-
-                        break;
-                    }
-
-                    case ESTADO_EM_CHAMAS: {
-                        /* Decrementa o tempo de queima restante da célula */
-                        int novo_tempo = celulas.tempo_atual[i] - 1;
-
-                        if (novo_tempo == 0) {
-                            celulas.proximo_estado[i] = ESTADO_QUEIMADA;
-                            celulas.proximo_tempo[i]  = 0;
-                            next_queimadas++;
-                        } else {
-                            celulas.proximo_estado[i] = ESTADO_EM_CHAMAS;
-                            celulas.proximo_tempo[i]  = novo_tempo;
-                            next_em_chamas++;
-                        }
-
-                        break;
-                    }
-
-                    case ESTADO_QUEIMADA:
+                    if (tempo_ignicao_restante == 0) {
                         celulas.proximo_estado[i] = ESTADO_QUEIMADA;
                         celulas.proximo_tempo[i]  = 0;
                         next_queimadas++;
-                        break;
+                    } else {
+                        celulas.proximo_estado[i] = ESTADO_EM_CHAMAS;
+                        celulas.proximo_tempo[i]  = tempo_ignicao_restante;
+                        next_em_chamas++;
+                    }
 
-                    case ESTADO_CONTENCAO:
-                        celulas.proximo_estado[i] = ESTADO_CONTENCAO;
-                        celulas.proximo_tempo[i]  = 0;
+                } else {
+                    celulas.proximo_estado[i] = estado_celula;
+                    celulas.proximo_tempo[i]  = 0;
+
+                    if (estado_celula == ESTADO_NAO_COMBUSTIVEL) {
+                        next_nao_comb++;
+                    } else if (estado_celula == ESTADO_QUEIMADA) {
+                        next_queimadas++;
+                    } else if (estado_celula == ESTADO_CONTENCAO) {
                         next_contencao++;
-                        break;
+                    }
                 }
             }
         }
