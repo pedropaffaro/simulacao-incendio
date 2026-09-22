@@ -183,6 +183,8 @@ run_case_pinned "monothread" "pequena" "$ENTRADAS_DIR/entrada_carga_pequena.txt"
 run_case_pinned "monothread" "pequena" "$ENTRADAS_DIR/entrada_carga_pequena_T1.txt" "${SCHED_BIN[static]}" "static" 1 3
 run_case_pinned "monothread" "media"   "$ENTRADAS_DIR/entrada_carga_media.txt"      "$BIN_SEQ"            "seq"    8 3
 run_case_pinned "monothread" "media"   "$ENTRADAS_DIR/entrada_carga_media_T1.txt"   "${SCHED_BIN[static]}" "static" 1 3
+run_case_pinned "monothread" "grande"  "$ENTRADAS_DIR/entrada_carga_grande.txt"     "$BIN_SEQ"            "seq"    8 3
+run_case_pinned "monothread" "grande"  "$ENTRADAS_DIR/entrada_carga_grande_T1.txt"  "${SCHED_BIN[static]}" "static" 1 3
 
 echo ""
 echo "Benchmark concluido. Resultados em $CSV"
