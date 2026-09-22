@@ -24,8 +24,9 @@
 # Saida:
 #   results/raw/runs.csv: uma linha por execucao, com os 12 campos de saida do
 #   programa mais metadados (grupo, carga, entrada, binario, schedule, T do
-#   arquivo, repeticao). O processamento (mediana, speedup, tabelas .tex) fica
-#   por conta de scripts/process_results.py.
+#   arquivo, repeticao). O arquivo e SOBRESCRITO a cada chamada deste script
+#   (nao acumula com execucoes anteriores). O processamento (mediana, speedup,
+#   tabelas .tex) fica por conta de scripts/process_results.py.
 
 set -euo pipefail
 
@@ -64,10 +65,11 @@ if [[ ! -d "$ENTRADAS_DIR" ]]; then
   exit 1
 fi
 
-# Cabecalho do CSV (escrito uma unica vez; execucoes seguintes so acrescentam)
-if [[ ! -f "$CSV" ]]; then
-  echo "grupo,carga,entrada,binario,schedule,T_arquivo,rep,passos,nao_combustiveis,intactas,em_chamas,queimadas,contencao,total_ignicoes,pico_passo,pico_qtd,percentual_queimado,percentual_protegido,checksum,tempo" > "$CSV"
-fi
+# Cabecalho do CSV: sempre reescrito do zero. Cada chamada deste script gera
+# uma bateria completa e autocontida -- rodar de novo nao deve acumular linhas
+# de execucoes/maquinas anteriores, que ficariam indistinguiveis e distorceriam
+# a mediana calculada por process_results.py.
+echo "grupo,carga,entrada,binario,schedule,T_arquivo,rep,passos,nao_combustiveis,intactas,em_chamas,queimadas,contencao,total_ignicoes,pico_passo,pico_qtd,percentual_queimado,percentual_protegido,checksum,tempo" > "$CSV"
 
 # parse_and_append: converte a saida de 12 linhas do programa em uma linha CSV
 parse_and_append() {

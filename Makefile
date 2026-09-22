@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -fopenmp -std=c99 # Flags de otimização (-O2), avisos (-Wall, -Wextra) e OpenMP. NÃO PRECISA DE -march=native
+CFLAGS = -Wall -Wextra -fopenmp -std=c99 # Flags de otimização (-O2), avisos (-Wall, -Wextra) e OpenMP. NÃO PRECISA DE -march=native
 INC = -Iinclude
 LDFLAGS = -lm
 
