@@ -143,44 +143,54 @@ typedef struct {
 } CELULAS;
 \end{lstlisting}
 
-Mantê-los em blocos contíguos maximiza o aproveitamento de cache e não desperdiça banda trazendo campos que não serão usados naquele acesso. No código paralelo, a estrutura inteira pode ser declarada \texttt{shared} em uma única entrada da cláusula, e a troca de matrizes ao final de cada passo se resume a permutar campos (ponteiros) de um objeto compartilhado: como cada campo de \texttt{CELULAS} é um ponteiro para o vetor correspondente, a troca é implementada trocando os próprios ponteiros \texttt{estado\_atual} $\longleftrightarrow$ \texttt{proximo\_estado} e \texttt{tempo\_atual} $\longleftrightarrow$ \texttt{proximo\_tempo}, ao custo de $O(1)$ em vez de uma cópia $O(L \cdot C)$. Essa mesma troca é descrita em detalhe com o trecho de código correspondente na Seção~\ref{sec:seq}.
+A organização em \emph{Structure of Arrays} mantém cada atributo das células em um vetor separado e contíguo na memória. Dessa forma, quando um determinado atributo é percorrido, como \texttt{estado\_atual}, os valores utilizados estão armazenados sequencialmente, favorecendo o uso da memória cache e evitando carregar, junto com eles, outros campos da célula que não são necessários naquele momento. Essa organização também simplifica a atualização entre passos da simulação. Como os campos são ponteiros para vetores distintos, ao final de cada passo não é necessário copiar os $L \cdot C$ elementos calculados: basta trocar os ponteiros dos vetores atual e próximo, fazendo com que essa operação tenha custo constante, $O(1)$.
 
-\paragraph{Sobre falso compartilhamento.} O que evita falso compartilhamento (\emph{false sharing}) aqui não é a separação em vetores por si só, e sim o particionamento do índice linear entre as \emph{threads}: os laços \texttt{omp for} da Seção~\ref{sec:omp} usam \texttt{schedule(static)} por padrão, ou \texttt{dynamic}/\texttt{guided} com chunk de 1024 elementos nos experimentos da Seção~\ref{sec:resultados}, e ambas as políticas atribuem a cada \emph{thread} um intervalo contíguo de índices, disjunto dos das demais. Isso confina o problema, no pior caso, à fronteira entre dois intervalos consecutivos, no máximo $T-1$ linhas de cache por vetor, por passo, contra $L \cdot C / 16$ linhas totais tocadas na mesma varredura, uma fração desprezível diante dos \emph{chunks} efetivamente usados (o padrão de \texttt{static} ou 1024 elementos), muitas ordens de grandeza maiores que uma linha de cache. O cenário problemático seria um \emph{chunk} pequeno e não contíguo, como \texttt{schedule(static, 1)}, que não utilizamos.
+Na versão paralela, os laços percorrem esses vetores em blocos de índices, o que também reduz a ocorrência de falso compartilhamento. Esse problema ocorre quando \emph{threads} diferentes escrevem em posições distintas que pertencem à mesma linha de cache, causando invalidações desnecessárias entre os núcleos. Com \texttt{schedule(static)}, os índices são divididos em blocos contíguos entre as \emph{threads}, fazendo com que esse efeito possa ocorrer principalmente nas fronteiras entre os blocos. Nos experimentos com \texttt{dynamic} e \texttt{guided}, foi utilizado um \emph{chunk} de 1024 elementos, de forma que o trabalho também é distribuído em blocos contíguos relativamente grandes, reduzindo a frequência dessas fronteiras. Em contrapartida, vale destacar que uma política como \texttt{schedule(static, 1)} distribuiria células consecutivas entre \emph{threads} diferentes, aumentando significativamente a possibilidade de falso compartilhamento e, por esse motivo, essa configuração não foi utilizada.
 
 \subsection{Funções de cálculo compartilhadas}
 \label{sec:funcoes-compartilhadas}
 
-O modelo matemático da simulação (e não apenas as estruturas de dados da Seção~\ref{sec:soa}) é implementado por um conjunto de funções puras, textualmente idênticas em \texttt{fire\_seq.c} e \texttt{fire\_omp.c}: \texttt{fator\_cobertura} e \texttt{tempo\_queima\_inicial} traduzem o tipo de cobertura de uma célula no multiplicador de combustível e no número de passos em chamas, respectivamente; \texttt{peso\_vizinho} calcula a contribuição de um vizinho em chamas para o somatório $S$, combinando o peso ortogonal/diagonal com o alinhamento entre a direção do vizinho e a do vento; \texttt{potencial\_ignicao} converte $S$, o fator de combustível e a umidade no potencial de ignição $I$ comparado contra \texttt{LIMIAR}; \texttt{estado\_apos\_ativacao} decide o efeito da ativação de uma zona de contenção sobre uma célula; e \texttt{percentual\_queimado}/\texttt{percentual\_protegido} calculam as duas métricas finais a partir dos contadores de estado. Por não dependerem de nenhum estado global nem de laços (cada uma recebe seus operandos por parâmetro e devolve um único valor), essas funções são triviais de comparar linha a linha entre os dois arquivos-fonte, e concentram toda a lógica do modelo que precisa ser idêntica entre as duas versões para que a Seção~\ref{sec:validacao} faça sentido: qualquer divergência de saída entre \texttt{fire\_seq} e \texttt{fire\_omp} só pode vir, por construção, da orquestração em torno dessas funções (a ordem de varredura, a forma de acumular contadores), nunca do cálculo em si.
+Os cálculos básicos do modelo foram organizados em funções auxiliares mantidas de forma idêntica nas versões sequencial e paralela. A função \texttt{fator\_cobertura} associa cada tipo de cobertura ao seu fator de combustível, enquanto \texttt{tempo\_queima\_inicial} determina por quantos passos uma célula permanece em chamas. A contribuição de cada vizinho para a propagação do incêndio é calculada por \texttt{peso\_vizinho}, que considera sua posição relativa e a influência do vento. A partir da soma dessas contribuições, \texttt{potencial\_ignicao} calcula o potencial de ignição da célula considerando também seu tipo de cobertura e sua umidade. Por fim, \texttt{percentual\_queimado} e \texttt{percentual\_protegido} calculam as métricas apresentadas ao término da simulação.
+
+Essas funções recebem todos os valores necessários por parâmetro e não dependem de estado global, o que permite utilizar a mesma lógica de cálculo nas duas implementações. Dessa forma, as principais diferenças entre as versões sequencial e paralela ficam concentradas na forma como a grade é percorrida, na distribuição do trabalho entre as \emph{threads}, na acumulação das estatísticas e na sincronização necessária entre as etapas de cada passo.
 
 \subsection{Leitura e validação da entrada}
 
-As funções de leitura são segmentadas por conjunto de dados do arquivo de entrada, de modo a detectar valores inadequados aos parâmetros. Caso a entrada não seja válida, o programa é interrompido. Essa etapa contempla a verificação de focos iniciais repetidos e a rejeição de focos posicionados sobre água ou solo exposto.
+A leitura do arquivo de entrada foi dividida de acordo com os diferentes conjuntos de parâmetros da simulação. Cada etapa realiza também as validações correspondentes, permitindo interromper a execução assim que uma entrada inválida é identificada. São verificados, entre outros aspectos, as dimensões da matriz, os parâmetros do vento, a quantidade e a posição dos focos iniciais e os limites das zonas de contenção. Também são rejeitados focos repetidos ou posicionados sobre células não combustíveis, como água e solo exposto.
 
 \subsection{Preparação da simulação}
 \label{sec:preparacao}
 
-A função de geração do terreno percorre a matriz uma única vez, em ordem crescente de índice, sorteando a cobertura de cada célula e, imediatamente depois, a sua umidade (Listagem~\ref{lst:terreno}). Essa ordem é obrigatória, uma vez que ela fixa a sequência de chamadas a \texttt{rand\_r} e, portanto, determina o terreno de forma unívoca a partir da \emph{seed} fornecida (conforme descrito no enunciado).
+Após a leitura das configurações gerais, a grade é inicializada pela função de geração do terreno. As células são percorridas uma única vez em ordem crescente de índice. Para cada uma, primeiro é determinada a cobertura e, em seguida, sua umidade, conforme apresentado na Listagem~\ref{lst:terreno}. Essa ordem é mantida porque ambos os valores são obtidos por chamadas sucessivas a \texttt{rand\_r}; assim, uma mesma \emph{seed} sempre produz a mesma configuração inicial da grade.
 
 \begin{lstlisting}[caption={Geração do terreno e da umidade, idêntica nas duas versões.},label={lst:terreno}]
 for (long long i = 0; i < total_celulas; i++) {
-    int val = rand_r(&seed) % 100;
-    if      (val <= COBERTURA_MAX_AGUA)     { /* agua, nao combustivel */ }
-    else if (val <= COBERTURA_MAX_SOLO)     { /* solo, nao combustivel */ }
-    else if (val <= COBERTURA_MAX_RASTEIRA) { /* rasteira, intacta */ }
-    else                                    { /* floresta, intacta  */ }
-    g->umidade[i]     = rand_r(&seed) % 101;
-    g->tempo_atual[i] = 0;
-    g->ativacao[i]    = CELULA_SEM_CONTENCAO;
+
+```
+int val = rand_r(&seed) % 100;
+
+if      (val <= COBERTURA_MAX_AGUA)     { /* agua, nao combustivel */ }
+else if (val <= COBERTURA_MAX_SOLO)     { /* solo, nao combustivel */ }
+else if (val <= COBERTURA_MAX_RASTEIRA) { /* rasteira, intacta */ }
+else                                    { /* floresta, intacta */ }
+
+g->umidade[i]     = rand_r(&seed) % 101;
+g->tempo_atual[i] = 0;
+g->ativacao[i]    = CELULA_SEM_CONTENCAO;
+```
+
 }
 \end{lstlisting}
 
-O mapa de contenção é construído durante a leitura das zonas: uma célula recebe o passo de ativação apenas se ainda não tiver valor atribuído ou se o novo passo for menor que o já registrado, implementando a regra do menor passo em caso de zonas sobrepostas. A geração do terreno, a construção do mapa de ativação e a aplicação dos focos ocorrem antes da etapa cronometrada; a contagem de \texttt{combustiveis\_iniciais} também é feita fora do trecho medido, nas duas versões.
+Depois da geração do terreno, os focos iniciais são aplicados às células indicadas na entrada. Em seguida, é construído o mapa de contenção, no qual cada posição armazena o passo em que a contenção deve ser ativada. Quando uma célula pertence a mais de uma zona, é mantido o menor passo de ativação entre elas.
+
+Toda essa preparação ocorre antes do início da medição de tempo. Nessa etapa também é realizada uma primeira varredura da grade para contabilizar a quantidade inicial de células combustíveis e a distribuição dos estados. Na implementação sequencial, essa contagem é feita por uma varredura simples da grade, enquanto a versão paralela utiliza um \texttt{omp parallel for} com reduções sobre os respectivos contadores. Como essa operação ocorre antes do trecho cronometrado em ambas as versões, ela não é considerada na comparação dos tempos de execução da simulação.
 
 %=====================================================================
 \section{Solução sequencial}
 \label{sec:seq}
 
-A organização do código, as estruturas de dados, as funções de cálculo compartilhadas, a leitura/validação da entrada e a preparação da simulação são as descritas na Seção~\ref{sec:comum}. Esta seção trata apenas do que é específico de \texttt{fire\_seq.c}: o laço principal e sua complexidade.
+A organização do código, as estruturas de dados, as funções de cálculo compartilhadas, a leitura/validação da entrada e a preparação da simulação são as descritas na Seção~\ref{sec:comum}. Esta seção trata apenas do que é específico de \texttt{fire\_seq.c}: o laço principal do algoritmo sequencial e sua complexidade.
 
 \subsection{Núcleo da simulação}
 
@@ -613,23 +623,25 @@ A Tabela~\ref{tab:speedup-corrigido} decompõe o speedup medido dividindo-o pelo
 
 \begin{table}[H]
 \centering
-\caption{Tempo, speedup e eficiência em função de $T$ (carga grande).}
+\caption{Tempo, speedup, eficiência e métrica de Karp--Flatt em função de $T$ (carga grande).}
 \label{tab:varredura}
 \small
-\begin{tabular}{@{}rrrr@{}}
+\begin{tabular}{@{}rrrrr@{}}
 \toprule
-$T$ & Tempo (s) & $S(T)$ & $E(T)$ \\
+$T$ & Tempo (s) & $S(T)$ & $E(T)$ & $e(T)$ \\
 \midrule
 \IfFileExists{plot/tab_varredura.tex}{
   \input{plot/tab_varredura.tex}
 }{
-  \TODO{Dados não encontrados em plot/tab\_varredura.tex} & & & \\
+  \TODO{Dados não encontrados em plot/tab\_varredura.tex} & & & & \\
 } \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 O tempo cai de forma monotônica até $T=8$ ($1{,}88$s) e praticamente estagna entre $T=8$ e $T=16$ ($1{,}89$s). O speedup acompanha esse padrão: parte de $S=0{,}94$ em $T=1$ (levemente abaixo de 1, o mesmo sinal do fator monothread próximo de 1 discutido na Seção~\ref{sec:monothread}), cresce até um pico de $S=3{,}28$ em $T=8$ e cai ligeiramente para $S=3{,}27$ em $T=16$. A eficiência bruta $E(T)=S(T)/T$ cai continuamente com $T$ (de $0{,}94$ em $T=1$ para $0{,}88$, $0{,}77$, $0{,}41$ e $0{,}20$ em $T=2$, $4$, $8$ e $16$, respectivamente), com a queda mais acentuada exatamente na transição de $T=4$ para $T=8$. Esse padrão é o esperado ao ultrapassar o número de núcleos físicos do processador (4, Tabela~\ref{tab:ambiente}): \emph{threads} adicionais além desse ponto disputam os mesmos núcleos via \emph{hyperthreading}, entregando ganho marginal decrescente ($T=8$) e depois praticamente nulo ($T=16$) em vez de escalabilidade linear.
+
+A Tabela~\ref{tab:varredura} inclui também a métrica de Karp--Flatt $e(T) = (T/S_T - 1)/(T-1)$, definida para $T \geq 2$, que reúne em um único número a fração serial efetiva --- trechos sequenciais, custos de sincronização e desequilíbrio de carga --- necessária para explicar o $S(T)$ observado. Dois padrões se destacam: $e(T)$ \emph{decresce} de $T=2$ ($0{,}13$) para $T=4$ ($0{,}10$), indicando que mais \emph{threads} amortizam os custos fixos de sincronização por passo e a fração serial efetiva cai; e \emph{cresce} de $T=4$ para $T=8$ ($0{,}21$) e $T=16$ ($0{,}26$), sinal de que, ao ultrapassar os 4 núcleos físicos, o \emph{hyperthreading} introduz contenção por recursos de execução dentro de cada núcleo, aumentando os \emph{overheads} com $p$. Segundo a interpretação da disciplina, $e(p)$ crescente indica que ``\emph{overheads} ou desequilíbrios aumentam com $p$'': é exatamente o que ocorre a partir de $T=8$ neste processador.
 
 \begin{figure}[H]
 \centering
@@ -688,13 +700,23 @@ O speedup bruto de $3{,}29$ a $3{,}54\times$ (Tabela~\ref{tab:speedup}) já é, 
 
 Descontado esse fator quase neutro, o ganho atribuível apenas à paralelização é $S_\text{par} \approx 3{,}51$ a $3{,}64\times$ (Tabela~\ref{tab:speedup-corrigido}), muito próximo do speedup bruto (a correção nunca ultrapassa $7\%$). A eficiência correspondente depende de qual contagem de \emph{threads} se usa como referência: dividida pelos $T=4$ ou $T=8$ \emph{threads} nominais de cada entrada, a eficiência cai de $91\%$ (carga pequena, $T=4$) para $44\%$ (cargas média e grande, $T=8$), uma queda expressiva. Dividida pelos 4 núcleos físicos reais do processador (Tabela~\ref{tab:ambiente}), no entanto, a eficiência fica em $88$ a $91\%$ nas três cargas, próxima do linear. As duas leituras não são contraditórias, elas medem coisas diferentes. A primeira mostra que, ao usar 8 \emph{threads} nominais em um processador com apenas 4 núcleos físicos, a segunda metade das \emph{threads} (as lógicas, via \emph{hyperthreading}) contribui muito pouco além do que os 4 núcleos físicos já entregam sozinhos, o comportamento esperado de \emph{hyperthreading} em um laço com uso intenso de unidades aritméticas inteiras e pouca espera por memória. A segunda mostra que, contra o paralelismo físico real disponível, a estratégia de paralelização em si (região persistente, \texttt{omp for collapse(2)}, reduções) está próxima do ótimo. A leitura relevante para avaliar a qualidade da paralelização implementada é a segunda; a primeira é relevante para decidir quantas \emph{threads} de fato vale a pena usar neste processador, e a resposta, à luz da varredura de $T$ (Seção~\ref{sec:varredura-t}), é 4: o tempo praticamente estagna de $T=4$ para $T=8$ e $T=16$, e a eficiência bruta despenca no mesmo ponto.
 
+\paragraph{Lei de Amdahl e limite teórico do speedup.}
+Isolando a fração serial $f$ da equação de Amdahl $S(p) = 1/[f + (1-f)/p]$ com a medição mais limpa disponível --- $S(4) = 3{,}09$ na varredura da carga grande com $T = 4$, igual ao número de núcleos físicos e portanto sem interferência de \emph{hyperthreading}:
+\[
+  f = \frac{p/S(p) - 1}{p - 1} = \frac{4/3{,}09 - 1}{3} \approx 9{,}8\%
+\]
+O speedup máximo teórico com processadores ideais em número infinito é $S_\text{max} = 1/f \approx 10{,}2\times$. Com $T = 8$ núcleos \emph{físicos} hipotéticos (sem o custo do \emph{hyperthreading}), Amdahl prevê $S(8) = 1/(0{,}098 + 0{,}902/8) \approx 4{,}3\times$; o valor medido de $3{,}28\times$ fica abaixo desse teto, diferença ($4{,}3$ vs $3{,}3$) inteiramente explicada pelo \emph{overhead} do \emph{hyperthreading} quantificado pela métrica de Karp--Flatt (Seção~\ref{sec:varredura-t}). Nota-se também que o valor de $f$ obtido via Amdahl coincide com o valor de $e(4)$ calculado pela Karp--Flatt ($0{,}10$): as duas fórmulas são algebricamente equivalentes quando a medição é livre de \emph{overheads} externos ao código --- confirmando a consistência entre os dois modelos.
+
+\paragraph{Lei de Gustafson e capacidade de escalar o problema.}
+Enquanto Amdahl fixa o tamanho do problema e pergunta ``quanto mais rápido?'', Gustafson fixa o tempo e pergunta ``quanto mais trabalho no mesmo tempo?''. O \emph{speedup} escalado é $S^G(T) = \alpha + T(1-\alpha)$, em que $\alpha$ é a fração serial de $t_\text{par}$. Usando a relação $\alpha = f \cdot S(T)$ com $f \approx 9{,}8\%$: para $T = 4$, $\alpha \approx 0{,}098 \times 3{,}09 \approx 0{,}30$ e $S^G(4) \approx 0{,}30 + 4 \times 0{,}70 = 3{,}1\times$ (idêntico ao Amdahl, como esperado quando $f$ é constante); para $T = 8$, $\alpha \approx 0{,}098 \times 3{,}28 \approx 0{,}32$ e $S^G(8) \approx 0{,}32 + 8 \times 0{,}68 = 5{,}8\times$. Esse valor indica que, mantendo o tempo de execução paralela de $1{,}88$\,s fixo, poderíamos processar um problema $5{,}8\times$ maior do que o que a versão sequencial resolve no mesmo tempo --- perspectiva mais otimista do que os $3{,}28\times$ da leitura de Amdahl, pois Gustafson assume que a fração serial $\alpha$ não cresce com o tamanho do problema. Esse pressuposto é corroborado empiricamente: o \emph{throughput} sequencial mantém-se praticamente constante nas três cargas testadas ($101$--$104$ M\,atualiz./s, Tabela~\ref{tab:vazao}), mostrando que a barreira de sincronização por passo (\texttt{omp single}) não escala com $L \times C$.
+
 %=====================================================================
 \section{Conclusão}
 \label{sec:conclusao}
 
 As implementações sequencial e paralela produziram resultados numericamente idênticos em todos os cenários testados, três cargas de trabalho e cinco valores de $T$, confirmando que a paralelização por dados dentro de cada passo, sem quebra de dependência temporal entre passos, preserva exatamente a semântica do modelo sequencial (Seção~\ref{sec:validacao}). A estratégia de região paralela persistente, \texttt{omp for collapse(2)} e reduções inteiras eliminou a necessidade de sincronização explícita (\texttt{critical}/\texttt{atomic}) no laço principal, apoiando-se apenas nas barreiras implícitas do OpenMP para a correção da troca de \emph{buffers} e da condição de parada (Seção~\ref{sec:omp}).
 
-A decomposição do speedup bruto (Seção~\ref{sec:analise}) mostrou que, com o código em seu estado atual, o fator monothread entre as duas versões está próximo de 1 ($0{,}94$ a $0{,}97\times$). Como resultado, o speedup bruto medido já é, essencialmente, o próprio ganho atribuível aos múltiplos núcleos, sem precisar de uma correção expressiva. Esse ganho é consistente com a arquitetura de 4 núcleos físicos do ambiente de testes (Tabela~\ref{tab:ambiente}): a eficiência paralela normalizada por esses 4 núcleos fica em $88$--$91\%$, ao passo que a mesma eficiência normalizada pelas 8 \emph{threads} nominais do processador cai para $44\%$ nas cargas média e grande, evidenciando o limite prático do \emph{hyperthreading} para esta carga de trabalho. A comparação entre políticas de escalonamento (\texttt{static}, \texttt{static,1024}, \texttt{dynamic,1024}, \texttt{guided}) mostrou diferenças moderadas entre si (no máximo cerca de $8\%$) em todo o intervalo de $T$ testado, com \texttt{static,1024} sendo a opção mais rápida em todos os casos testados, por margem estreita sobre o \texttt{static} padrão; ainda assim, a diferença pequena entre as quatro políticas indica que a carga de trabalho por célula é suficientemente uniforme para que o escalonamento estático seja uma escolha adequada, sem necessidade de balanceamento dinâmico.
+A decomposição do speedup bruto (Seção~\ref{sec:analise}) mostrou que, com o código em seu estado atual, o fator monothread entre as duas versões está próximo de 1 ($0{,}94$ a $0{,}97\times$). Como resultado, o speedup bruto medido já é, essencialmente, o próprio ganho atribuível aos múltiplos núcleos, sem precisar de uma correção expressiva. Esse ganho é consistente com a arquitetura de 4 núcleos físicos do ambiente de testes (Tabela~\ref{tab:ambiente}): a eficiência paralela normalizada por esses 4 núcleos fica em $88$--$91\%$, ao passo que a mesma eficiência normalizada pelas 8 \emph{threads} nominais do processador cai para $44\%$ nas cargas média e grande, evidenciando o limite prático do \emph{hyperthreading} para esta carga de trabalho. A comparação entre políticas de escalonamento (\texttt{static}, \texttt{static,1024}, \texttt{dynamic,1024}, \texttt{guided}) mostrou diferenças moderadas entre si (no máximo cerca de $8\%$) em todo o intervalo de $T$ testado, com \texttt{static,1024} sendo a opção mais rápida em todos os casos testados, por margem estreita sobre o \texttt{static} padrão; ainda assim, a diferença pequena entre as quatro políticas indica que a carga de trabalho por célula é suficientemente uniforme para que o escalonamento estático seja uma escolha adequada, sem necessidade de balanceamento dinâmico. A análise complementar pela Lei de Amdahl (fração serial $f \approx 9{,}8\%$, $S_\text{max} \approx 10{,}2\times$), pela Lei de Gustafson ($S^G(8) \approx 5{,}8\times$ para problema escalado) e pela métrica de Karp--Flatt ($e(T)$ decrescente de $T=2$ a $T=4$ e crescente a partir de $T=8$) converge para o mesmo diagnóstico: a implementação está próxima do ótimo para o paralelismo físico disponível, e o gargalo dominante é o limite de 4 núcleos físicos do processador, não a qualidade da paralelização em si.
 
 \appendix
 
