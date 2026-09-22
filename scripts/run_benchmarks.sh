@@ -140,13 +140,18 @@ run_case_pinned() {
   done
 }
 
-# 1) Tabelas 1/2/3/7/8/9: tempos base (T fixo no arquivo: 4/8/8, schedule static)
+# 1) Tempos base: seq e par com o T nativo de cada carga (4/8/8)
 run_case "tempos" "pequena" "$ENTRADAS_DIR/entrada_carga_pequena.txt" "$BIN_SEQ"            "seq"    4 "$REPS"
 run_case "tempos" "pequena" "$ENTRADAS_DIR/entrada_carga_pequena.txt" "${SCHED_BIN[static]}" "static" 4 "$REPS"
 run_case "tempos" "media"   "$ENTRADAS_DIR/entrada_carga_media.txt"   "$BIN_SEQ"            "seq"    8 "$REPS"
 run_case "tempos" "media"   "$ENTRADAS_DIR/entrada_carga_media.txt"   "${SCHED_BIN[static]}" "static" 8 "$REPS"
 run_case "tempos" "grande"  "$ENTRADAS_DIR/entrada_carga_grande.txt"  "$BIN_SEQ"            "seq"    8 "$REPS"
 run_case "tempos" "grande"  "$ENTRADAS_DIR/entrada_carga_grande.txt"  "${SCHED_BIN[static]}" "static" 8 "$REPS"
+
+# T=1 paralelo: baseline para o speedup relativo (Sp_rel = Tpar_1/Tpar_p, definição dos slides)
+run_case "tempos" "pequena" "$ENTRADAS_DIR/entrada_carga_pequena_T1.txt" "${SCHED_BIN[static]}" "static" 1 "$REPS"
+run_case "tempos" "media"   "$ENTRADAS_DIR/entrada_carga_media_T1.txt"   "${SCHED_BIN[static]}" "static" 1 "$REPS"
+run_case "tempos" "grande"  "$ENTRADAS_DIR/entrada_carga_grande_T1.txt"  "${SCHED_BIN[static]}" "static" 1 "$REPS"
 
 # 2) Tabela 4 (5.5): independencia do numero de threads, carga media, T = 1,2,4,8,16
 for t in 1 2 4 16; do

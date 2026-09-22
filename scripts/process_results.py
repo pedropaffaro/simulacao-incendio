@@ -6,32 +6,34 @@ Lê results/raw/runs.csv (gerado por scripts/run_benchmarks.sh), aplica a
 mediana como filtro estatístico sobre as repetições de cada configuração, e
 gera em results/plot/:
 
-  - tab_tempos.tex             (Tabela 7  -- tempo seq/par)
-  - tab_speedup.tex            (Tabela 8  -- S(T), E(T))
-  - tab_vazao.tex              (Tabela 9  -- vazão em M atualizações/s)
-  - tab_threads_det.tex        (Tabela 4  -- independência de T, carga média)
-  - tab_varredura.tex          (Tabela 12 -- tempo/S/E x T, carga grande)
-  - tab_schedules.tex          (Tabela 13 -- tempo x schedule x T, carga grande)
-  - tab_monothread.tex         (Tabela 10 -- isolamento monothread)
-  - tab_speedup_corrigido.tex  (Tabela 11 -- speedup decomposto)
-  - fig_tempos.dat, fig_vazao.dat, fig_speedup.dat (dados para pgfplots)
+  Tabelas (.tex — só as linhas de corpo, para \\input{} no main.tex):
+    tab_tempos.tex             tempo seq / par T-nativo / par T=1
+    tab_speedup.tex            S_abs, E_abs, S_rel, E_rel por carga
+    tab_vazao.tex              vazão em M atualizações/s
+    tab_threads_det.tex        independência do número de threads, carga média
+    tab_varredura.tex          tempo/S_abs/E_abs/S_rel/E_rel/e(T) vs T, carga grande
+    tab_schedules.tex          tempo x schedule x T, carga grande
+    tab_monothread.tex         isolamento monothread (taskset -c 0)
+    tab_speedup_corrigido.tex  decomposição S_abs = fator_monothread × S_rel
 
-Cada tab_*.tex contém SOMENTE as linhas de corpo da tabela (entre \midrule e
-\bottomrule), para dar \input{} de dentro do tabular já existente no
-main.tex -- assim o texto e a formatação da tabela ficam no relatório, e só
-os números vêm do processamento.
+  Dados para pgfplots (.dat — tab-separated):
+    fig_tempos_seq.dat / fig_tempos_par.dat / fig_tempos_par_T1.dat
+    fig_vazao.dat
+    fig_varredura.dat          T, tempo, S_abs, E_abs, S_rel, E_rel
+    fig_schedules.dat
+    fig_speedup.dat            S_abs e S_rel por carga
 
-Além de gerar as tabelas, o script AVISA (em stderr, sem interromper a
-execução) se detectar qualquer sinal de não-determinismo entre a versão
-sequencial e a paralela, ou entre execuções da paralela com T/schedule
-diferentes: checksum, total_ignicoes e pico_ignicoes deveriam ser idênticos
-em todos esses casos (checar_seq_par + check_determinism, chamada nos
-grupos threads_det, varredura_T e schedules).
+Métricas:
+  Speedup absoluto  S_abs = Tseq / Tpar_p   (melhor algoritmo seq vs par com p threads)
+  Speedup relativo  S_rel = Tpar_1 / Tpar_p  (par com 1 thread vs par com p threads)
+  Eficiência        E = Sp / p
+  Karp-Flatt        e(T) = (T/S_abs - 1) / (T - 1),  T >= 2
 
 Uso:
     python3 scripts/process_results.py [caminho/para/runs.csv]
 """
 import csv
+import math
 import statistics
 import sys
 from pathlib import Path
@@ -43,12 +45,10 @@ PLOT_DIR = ROOT / "results" / "plot"
 CARGA_ORDEM = ["pequena", "media", "grande"]
 CARGA_LABEL = {"pequena": "Pequena", "media": "Média", "grande": "Grande"}
 
-# Numero de nucleos fisicos do processador usado nos experimentos (Tabela 4 /
-# Ambiente experimental do relatorio: Intel Core i7-4790, 4 fisicos / 8 logicos
-# via hyperthreading). Usado para normalizar a eficiencia "real" na Tabela 9
-# (tab_speedup_corrigido.tex), em contraste com a normalizacao pelo T nominal
-# de cada entrada, que para as cargas media/grande e 8 (inclui as threads
-# logicas de hyperthreading, nao so os nucleos fisicos).
+# T nativo de cada arquivo de carga (campo T da primeira linha do arquivo de entrada)
+CARGA_T_NATIVE = {"pequena": 4, "media": 8, "grande": 8}
+
+# Núcleos físicos do processador usado nos experimentos (Intel Core i7-4790)
 NUM_NUCLEOS_FISICOS = 4
 
 NUM_FIELDS = {
@@ -57,11 +57,7 @@ NUM_FIELDS = {
     "percentual_queimado", "percentual_protegido", "tempo",
 }
 
-# Conjuntos de T usados nas Tabelas 4, 12 e 13 (threads_det, varredura_T,
-# schedules). Centralizados aqui porque antes apareciam repetidos como
-# literais em cada funcao -- mudar o conjunto de T's testados exigia lembrar
-# de trocar em varios lugares.
-T_VALORES_PADRAO = (1, 2, 4, 8, 16)
+T_VALORES_PADRAO   = (1, 2, 4, 8, 16)
 T_VALORES_SCHEDULES = (2, 4, 8, 16)
 
 
@@ -70,7 +66,7 @@ T_VALORES_SCHEDULES = (2, 4, 8, 16)
 def load_runs(path):
     if not path.exists():
         sys.exit(f"[erro] arquivo não encontrado: {path}\n"
-                  f"       rode scripts/run_benchmarks.sh antes de processar.")
+                  "       rode scripts/run_benchmarks.sh antes de processar.")
     with open(path, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     for r in rows:
@@ -94,56 +90,50 @@ def median_tempo(rows):
 
 
 def check_determinism(rows, chave_grupo):
-    """Avisa (não falha) se checksum/total_ignicoes/pico variarem dentro do
-    mesmo grupo de configuração onde deveriam ser constantes."""
     campos = ("checksum", "total_ignicoes", "pico_passo", "pico_qtd")
     valores = {c: {r[c] for r in rows} for c in campos}
     for c, vs in valores.items():
         if len(vs) > 1:
-            print(f"[aviso] {chave_grupo}: campo '{c}' variou entre execuções ({vs}) "
-                  f"-- verifique determinismo!", file=sys.stderr)
+            print(f"[aviso] {chave_grupo}: campo '{c}' variou ({vs}) -- não-determinismo!",
+                  file=sys.stderr)
 
 
 def checar_seq_par(rows):
-    """Confere, para cada carga do grupo 'tempos', se o checksum de fire_seq
-    bate com o de fire_omp_static -- a alegacao central do trabalho (Secao
-    5/Validacao: as duas versoes produzem saida identica exceto o tempo).
-    Antes esta comparacao so era feita manualmente (script de shell separado
-    citado no relatorio); aqui ela roda toda vez que o CSV e reprocessado."""
+    """Confirma que fire_seq e fire_omp_static produzem saída idêntica (exceto tempo)."""
     for carga in CARGA_ORDEM:
         seq = where(rows, grupo="tempos", carga=carga, binario="fire_seq")
         par = where(rows, grupo="tempos", carga=carga, binario="fire_omp_static")
         if not seq or not par:
             continue
-        cks_seq = {r["checksum"] for r in seq}
-        cks_par = {r["checksum"] for r in par}
-        if cks_seq != cks_par:
-            print(f"[aviso] tempos/{carga}: checksum seq {cks_seq} != checksum par {cks_par} "
-                  f"-- versoes divergem!", file=sys.stderr)
-        campos_extra = ("total_ignicoes", "pico_passo", "pico_qtd")
-        for campo in campos_extra:
-            v_seq = {r[campo] for r in seq}
-            v_par = {r[campo] for r in par}
-            if v_seq != v_par:
-                print(f"[aviso] tempos/{carga}: campo '{campo}' difere entre seq {v_seq} "
-                      f"e par {v_par}", file=sys.stderr)
+        if {r["checksum"] for r in seq} != {r["checksum"] for r in par}:
+            print(f"[aviso] tempos/{carga}: checksum seq != par -- versões divergem!", file=sys.stderr)
+        for campo in ("total_ignicoes", "pico_passo", "pico_qtd"):
+            if {r[campo] for r in seq} != {r[campo] for r in par}:
+                print(f"[aviso] tempos/{carga}: campo '{campo}' difere entre seq e par", file=sys.stderr)
 
 
 def carga_stats(rows, carga):
-    """Agrega o que tabela_tempos/tabela_speedup/tabela_vazao/
-    tabela_speedup_corrigido calculavam cada uma por conta propria a partir
-    do grupo 'tempos': tempo mediano seq/par, T nominal, dimensoes da
-    entrada e numero de passos. Devolve None se faltar algum dos dois
-    binarios para essa carga."""
+    """Agrega tempos medianos de seq, par nativo e par T=1 para uma carga.
+
+    Retorna dict com chaves: t_seq, t_par, t_par_T1 (None se não houver), T, L, C, passos.
+    t_par_T1 é o baseline do speedup relativo (Tpar_1/Tpar_p dos slides).
+    """
+    T_native = CARGA_T_NATIVE[carga]
     seq = where(rows, grupo="tempos", carga=carga, binario="fire_seq")
-    par = where(rows, grupo="tempos", carga=carga, binario="fire_omp_static")
+    all_par = where(rows, grupo="tempos", carga=carga, binario="fire_omp_static")
+    par = where(all_par, T_arquivo=T_native)
+    par_T1 = where(all_par, T_arquivo=1)
+
     if not seq or not par:
         return None
-    t_seq, t_par = median_tempo(seq), median_tempo(par)
-    T = par[0]["T_arquivo"]
-    L, C = get_lc(par[0]["entrada"])
-    passos = par[0]["passos"]
-    return {"t_seq": t_seq, "t_par": t_par, "T": T, "L": L, "C": C, "passos": passos}
+
+    t_seq    = median_tempo(seq)
+    t_par    = median_tempo(par)
+    t_par_T1 = median_tempo(par_T1) if par_T1 else None
+    L, C     = get_lc(par[0]["entrada"])
+    passos   = par[0]["passos"]
+    return {"t_seq": t_seq, "t_par": t_par, "t_par_T1": t_par_T1,
+            "T": T_native, "L": L, "C": C, "passos": passos}
 
 
 def fmt_int(n):
@@ -160,14 +150,11 @@ def fmt_pico(passo, qtd):
 
 _lc_cache = {}
 
-
 def get_lc(entrada_rel_path):
-    """Lê L e C da primeira linha do arquivo de entrada referenciado no CSV."""
     if entrada_rel_path in _lc_cache:
         return _lc_cache[entrada_rel_path]
     path = ROOT / entrada_rel_path
     if not path.exists():
-        # tenta relativo ao cwd também, caso o CSV tenha sido gerado alhures
         path = Path(entrada_rel_path)
     with open(path) as f:
         primeira = f.readline().split()
@@ -194,46 +181,65 @@ def write_dat(nome, cabecalho, linhas):
 
 
 # ---------------------------------------------------------------------------
-# Tabela 7 -- tempos (grupo "tempos") + dados da Figura 1
+# Tabela: tempos base + dados para figura
 def tabela_tempos(rows):
-    linhas_tex, linhas_dat_seq, linhas_dat_par = [], [], []
+    linhas_tex, linhas_dat_seq, linhas_dat_par, linhas_dat_par_T1 = [], [], [], []
     for carga in CARGA_ORDEM:
         stats = carga_stats(rows, carga)
         if stats is None:
             print(f"[aviso] tempos: faltam dados para carga={carga}", file=sys.stderr)
             continue
-        t_seq, t_par, T, L, C, passos = (
-            stats["t_seq"], stats["t_par"], stats["T"], stats["L"], stats["C"], stats["passos"]
+        t_seq, t_par, t_par_T1, T, L, C, passos = (
+            stats["t_seq"], stats["t_par"], stats["t_par_T1"],
+            stats["T"], stats["L"], stats["C"], stats["passos"]
         )
         atualizacoes_m = round(L * C * passos / 1e6)
+        t1_str = fmt_dec(t_par_T1, 6) if t_par_T1 is not None else "--"
         linhas_tex.append(
             f"{CARGA_LABEL[carga]} & {atualizacoes_m}~M & {T} & "
-            f"{fmt_dec(t_seq, 6)} & {fmt_dec(t_par, 6)} \\\\"
+            f"{fmt_dec(t_seq, 6)} & {fmt_dec(t_par, 6)} & {t1_str} \\\\"
         )
         linhas_dat_seq.append(f"{CARGA_LABEL[carga]}\t{t_seq:.6f}")
         linhas_dat_par.append(f"{CARGA_LABEL[carga]}\t{t_par:.6f}")
+        linhas_dat_par_T1.append(f"{CARGA_LABEL[carga]}\t{t_par_T1:.6f}" if t_par_T1 else f"{CARGA_LABEL[carga]}\tNaN")
     write_tex("tab_tempos.tex", linhas_tex)
-    write_dat("fig_tempos_seq.dat", "carga\ttempo", linhas_dat_seq)
-    write_dat("fig_tempos_par.dat", "carga\ttempo", linhas_dat_par)
+    write_dat("fig_tempos_seq.dat",    "carga\ttempo", linhas_dat_seq)
+    write_dat("fig_tempos_par.dat",    "carga\ttempo", linhas_dat_par)
+    write_dat("fig_tempos_par_T1.dat", "carga\ttempo", linhas_dat_par_T1)
 
 
 # ---------------------------------------------------------------------------
-# Tabela 8 -- speedup e eficiência (deriva do mesmo grupo "tempos")
+# Tabela: speedup absoluto e relativo + eficiências
+#
+# Sp_abs = Tseq  / Tpar_p  (melhor algoritmo sequencial — slides: "speedup absoluto")
+# Sp_rel = Tpar1 / Tpar_p  (versão paralela em 1 thread — slides: "speedup relativo")
+# Ep     = Sp / p
 def tabela_speedup(rows):
     linhas = []
     for carga in CARGA_ORDEM:
         stats = carga_stats(rows, carga)
         if stats is None:
             continue
-        t_seq, t_par, T = stats["t_seq"], stats["t_par"], stats["T"]
-        S = t_seq / t_par
-        E = S / T
-        linhas.append(f"{CARGA_LABEL[carga]} & {T} & {fmt_dec(S, 3)} & {fmt_dec(E, 3)} \\\\")
+        t_seq, t_par, t_par_T1, T = (
+            stats["t_seq"], stats["t_par"], stats["t_par_T1"], stats["T"]
+        )
+        S_abs = t_seq / t_par
+        E_abs = S_abs / T
+        if t_par_T1 is not None:
+            S_rel = t_par_T1 / t_par
+            E_rel = S_rel / T
+            rel_str = f"{fmt_dec(S_rel, 3)} & {fmt_dec(E_rel, 3)}"
+        else:
+            rel_str = "-- & --"
+        linhas.append(
+            f"{CARGA_LABEL[carga]} & {T} "
+            f"& {fmt_dec(S_abs, 3)} & {fmt_dec(E_abs, 3)} & {rel_str} \\\\"
+        )
     write_tex("tab_speedup.tex", linhas)
 
 
 # ---------------------------------------------------------------------------
-# Tabela 9 -- vazão (M atualizações/s) + dados da Figura 2
+# Tabela: vazão (M atualizações/s) + dados para figura
 def tabela_vazao(rows):
     linhas_tex, linhas_dat = [], []
     for carga in CARGA_ORDEM:
@@ -243,9 +249,9 @@ def tabela_vazao(rows):
         t_seq, t_par, T, L, C, passos = (
             stats["t_seq"], stats["t_par"], stats["T"], stats["L"], stats["C"], stats["passos"]
         )
-        celulas_m = L * C * passos / 1e6
-        vaz_seq = celulas_m / t_seq
-        vaz_par = celulas_m / t_par
+        celulas_m     = L * C * passos / 1e6
+        vaz_seq       = celulas_m / t_seq
+        vaz_par       = celulas_m / t_par
         vaz_par_thread = vaz_par / T
         linhas_tex.append(
             f"{CARGA_LABEL[carga]} & {T} & {fmt_dec(vaz_seq, 1)} & "
@@ -257,7 +263,7 @@ def tabela_vazao(rows):
 
 
 # ---------------------------------------------------------------------------
-# Tabela 4 -- independência do número de threads (carga média)
+# Tabela: independência do número de threads (carga média)
 def tabela_threads_det(rows):
     linhas = []
     for T in T_VALORES_PADRAO:
@@ -273,51 +279,79 @@ def tabela_threads_det(rows):
         )
     write_tex("tab_threads_det.tex", linhas)
 
-    # aviso extra: checksum deve ser IGUAL para todo T, não só dentro de cada T
     checksums = {r["T_arquivo"]: r["checksum"] for r in where(rows, grupo="threads_det", carga="media")}
     if len(set(checksums.values())) > 1:
-        print(f"[aviso] threads_det: checksum difere entre valores de T: {checksums}", file=sys.stderr)
+        print(f"[aviso] threads_det: checksum difere entre T: {checksums}", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
-# Tabela 12 -- varredura de T (carga grande)
+# Tabela: varredura de T (carga grande)
+# Colunas: T | Tempo | S_abs | E_abs | S_rel | E_rel | e(T)
 def tabela_varredura(rows):
     stats_grande = carga_stats(rows, "grande")
     if stats_grande is None:
-        print("[erro] varredura_T: falta tempo sequencial da carga grande (grupo 'tempos')", file=sys.stderr)
+        print("[erro] varredura_T: falta tempo seq da carga grande (grupo 'tempos')", file=sys.stderr)
         return
     t_seq = stats_grande["t_seq"]
+
+    # T=1 do grupo varredura: baseline do speedup relativo na varredura
+    grupo_T1 = where(rows, grupo="varredura_T", carga="grande", T_arquivo=1)
+    t_par_T1 = median_tempo(grupo_T1) if grupo_T1 else None
 
     linhas, linhas_dat = [], []
     for T in T_VALORES_PADRAO:
         grupo = where(rows, grupo="varredura_T", carga="grande", T_arquivo=T)
         if not grupo:
-            linhas.append(f"{T}  & \\TODO{{}} & \\TODO{{}} & \\TODO{{}} \\\\")
+            linhas.append(f"{T}  & \\TODO{{}} & \\TODO{{}} & \\TODO{{}} & \\TODO{{}} & \\TODO{{}} & \\TODO{{}} \\\\")
             continue
-        # mesmo tipo de garantia de determinismo aplicada em threads_det (Tabela 4):
-        # total_ignicoes/pico/checksum nao deveriam variar entre as repeticoes
-        # de um mesmo T aqui, e o checksum tampouco deveria variar entre T's
         check_determinism(grupo, f"varredura_T T={T}")
         t_par = median_tempo(grupo)
-        S = t_seq / t_par
-        E = S / T
-        linhas.append(f"{T}{' ' if T >= 10 else '  '}& {fmt_dec(t_par, 6)} & {fmt_dec(S, 2)} & {fmt_dec(E, 2)} \\\\")
-        linhas_dat.append(f"{T}\t{t_par:.6f}\t{S:.4f}\t{E:.4f}")
+
+        S_abs = t_seq / t_par
+        E_abs = S_abs / T
+        e_kf  = fmt_dec((T / S_abs - 1) / (T - 1), 2) if T > 1 else "--"
+
+        if t_par_T1 is not None:
+            S_rel = t_par_T1 / t_par
+            E_rel = S_rel / T
+            s_rel_str = fmt_dec(S_rel, 2)
+            e_rel_str = fmt_dec(E_rel, 2)
+            s_rel_dat = f"{S_rel:.4f}"
+            e_rel_dat = f"{E_rel:.4f}"
+        else:
+            s_rel_str = "--"
+            e_rel_str = "--"
+            s_rel_dat = "NaN"
+            e_rel_dat = "NaN"
+
+        linhas.append(
+            f"{T}{' ' if T >= 10 else '  '}"
+            f"& {fmt_dec(t_par, 6)} "
+            f"& {fmt_dec(S_abs, 2)} & {fmt_dec(E_abs, 2)} "
+            f"& {s_rel_str} & {e_rel_str} "
+            f"& {e_kf} \\\\"
+        )
+        linhas_dat.append(f"{T}\t{t_par:.6f}\t{S_abs:.4f}\t{E_abs:.4f}\t{s_rel_dat}\t{e_rel_dat}")
+
     write_tex("tab_varredura.tex", linhas)
-    write_dat("fig_varredura.dat", "T\ttempo\tspeedup\teficiencia", linhas_dat)
+    write_dat("fig_varredura.dat",
+              "T\ttempo\tspeedup_abs\teficiencia_abs\tspeedup_rel\teficiencia_rel",
+              linhas_dat)
 
     checksums = {r["T_arquivo"]: r["checksum"] for r in where(rows, grupo="varredura_T", carga="grande")}
     if len(set(checksums.values())) > 1:
-        print(f"[aviso] varredura_T: checksum difere entre valores de T: {checksums}", file=sys.stderr)
+        print(f"[aviso] varredura_T: checksum difere entre T: {checksums}", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
-# Tabela 13 -- comparação de schedules (carga grande)
+# Tabela: comparação de schedules (carga grande)
 def tabela_schedules(rows):
     schedules = ["static", "static_1024", "dynamic_1024", "guided"]
     schedule_label = {
-        "static": "static", "static_1024": "static, 1024",
-        "dynamic_1024": "dynamic, 1024", "guided": "guided",
+        "static": "static",
+        "static_1024": "static, 1024",
+        "dynamic_1024": "dynamic, 1024",
+        "guided": "guided",
     }
     linhas = []
     dat_por_T = {T: [] for T in T_VALORES_SCHEDULES}
@@ -327,9 +361,6 @@ def tabela_schedules(rows):
         for T in T_VALORES_SCHEDULES:
             grupo = where(rows, grupo="schedules", carga="grande", schedule=sc, T_arquivo=T)
             if grupo:
-                # cada combinacao schedule x T deveria ser tao deterministica
-                # quanto qualquer outro grupo -- schedule muda so a ordem de
-                # despacho do trabalho entre threads, nao o resultado
                 check_determinism(grupo, f"schedules {sc} T={T}")
                 checksums_todos[(sc, T)] = grupo[0]["checksum"]
                 t = median_tempo(grupo)
@@ -349,7 +380,8 @@ def tabela_schedules(rows):
 
 
 # ---------------------------------------------------------------------------
-# Tabela 10 -- isolamento monothread (taskset -c 0)
+# Tabela: isolamento monothread (taskset -c 0, sem paralelismo real)
+# Mede o overhead puro do framework OpenMP com T=1.
 def tabela_monothread(rows):
     linhas = []
     fatores = {}
@@ -358,74 +390,86 @@ def tabela_monothread(rows):
         par = where(rows, grupo="monothread", carga=carga, binario="fire_omp_static", T_arquivo=1)
         if not seq or not par:
             continue
-        t_seq, t_par = median_tempo(seq), median_tempo(par)
-        razao = t_seq / t_par
+        t_seq_pin, t_par_pin = median_tempo(seq), median_tempo(par)
+        razao = t_seq_pin / t_par_pin
         fatores[carga] = razao
-        linhas.append(f"{CARGA_LABEL[carga]} & {fmt_dec(t_seq, 6)} & {fmt_dec(t_par, 6)} & {fmt_dec(razao, 3)} \\\\")
+        linhas.append(
+            f"{CARGA_LABEL[carga]} & {fmt_dec(t_seq_pin, 6)} & "
+            f"{fmt_dec(t_par_pin, 6)} & {fmt_dec(razao, 3)} \\\\"
+        )
     write_tex("tab_monothread.tex", linhas)
     return fatores
 
 
 # ---------------------------------------------------------------------------
-# Tabela 9 -- speedup medido decomposto em fator monothread x fator paralelo
+# Tabela: decomposição S_abs = fator_monothread × S_rel
 #
-# Reporta DUAS eficiencias para S_par, porque sao respostas a perguntas
-# diferentes:
-#   - E_par_T:       S_par / T_arquivo (T nominal da entrada: 4 ou 8).
-#                     Cai bastante nas cargas media/grande porque ali T=8
-#                     conta as 4 threads logicas de hyperthreading como se
-#                     fossem nucleos completos.
-#   - E_par_fisico:  S_par / NUM_NUCLEOS_FISICOS (sempre 4, os nucleos fisicos
-#                     reais do processador, Tabela 4). E esta a metrica usada
-#                     no texto do relatorio (abstract e Secao 8) para afirmar
-#                     eficiencia de 93-98%; antes desta correcao, a coluna
-#                     unica "E paralela (/T)" usava T_arquivo tambem para
-#                     media/grande, o que produzia 0,48/0,49 em vez disso e
-#                     ficava inconsistente com o texto.
+# fator_monothread = Tseq / Tpar_1  (quanto a versão paralela "ganha" serialmente)
+# S_rel            = Tpar_1 / Tpar_p (speedup relativo dos slides)
+# S_abs            = fator_monothread × S_rel
+#
+# Prioridade para fator_monothread:
+#   1) medido diretamente via t_par_T1 do grupo "tempos" (unpinned)
+#   2) fallback: fatores_monothread do grupo "monothread" (pinned, taskset -c 0)
+#   3) extrapolação da carga media (marcado com ≈)
 def tabela_speedup_corrigido(rows, fatores_monothread):
     linhas_tex, linhas_dat = [], []
     for carga in CARGA_ORDEM:
         stats = carga_stats(rows, carga)
         if stats is None:
             continue
-        t_seq, t_par, T = stats["t_seq"], stats["t_par"], stats["T"]
-        S_medido = t_seq / t_par
+        t_seq, t_par, t_par_T1, T = (
+            stats["t_seq"], stats["t_par"], stats["t_par_T1"], stats["T"]
+        )
+        S_abs = t_seq / t_par
 
-        if carga in fatores_monothread:
-            fator = fatores_monothread[carga]
-            aprox = ""
+        if t_par_T1 is not None:
+            # Fonte primária: unpinned T=1 do grupo tempos
+            fator_mon = t_seq / t_par_T1
+            S_rel     = t_par_T1 / t_par
+            aprox     = ""
+        elif carga in fatores_monothread:
+            # Fallback: pinned (taskset -c 0) do grupo monothread
+            fator_mon = fatores_monothread[carga]
+            S_rel     = S_abs / fator_mon
+            aprox     = ""
         elif "media" in fatores_monothread:
-            # sem medição direta para esta carga: extrapola do fator da carga média
-            fator = fatores_monothread["media"]
-            aprox = "\\approx "
+            # Extrapolação da carga média
+            fator_mon = fatores_monothread["media"]
+            S_rel     = S_abs / fator_mon
+            aprox     = "\\approx "
         else:
-            linhas_tex.append(f"{CARGA_LABEL[carga]} & {T} & {fmt_dec(S_medido, 2)} & "
-                               f"\\TODO{{}} & \\TODO{{}} & \\TODO{{}} & \\TODO{{}} \\\\")
+            linhas_tex.append(
+                f"{CARGA_LABEL[carga]} & {T} & {fmt_dec(S_abs, 2)} & -- & -- & -- & -- \\\\"
+            )
             continue
 
-        S_par = S_medido / fator
-        E_par_T = S_par / T
-        E_par_fisico = S_par / NUM_NUCLEOS_FISICOS
-        fator_str = f"${aprox}{fmt_dec(fator, 3 if not aprox else 2)}$" if aprox else fmt_dec(fator, 3)
-        S_par_str = f"$\\approx {fmt_dec(S_par, 2)}$" if aprox else fmt_dec(S_par, 2)
-        E_par_T_str = f"$\\approx {fmt_dec(E_par_T, 2)}$" if aprox else fmt_dec(E_par_T, 2)
-        E_par_fisico_str = f"$\\approx {fmt_dec(E_par_fisico, 2)}$" if aprox else fmt_dec(E_par_fisico, 2)
+        E_rel_T      = S_rel / T
+        E_rel_fisico = S_rel / NUM_NUCLEOS_FISICOS
+
+        fator_str   = fmt_dec(fator_mon, 3)
+        s_rel_str   = f"$\\approx {fmt_dec(S_rel, 2)}$" if aprox else fmt_dec(S_rel, 2)
+        e_T_str     = f"$\\approx {fmt_dec(E_rel_T, 2)}$" if aprox else fmt_dec(E_rel_T, 2)
+        e_fis_str   = f"$\\approx {fmt_dec(E_rel_fisico, 2)}$" if aprox else fmt_dec(E_rel_fisico, 2)
 
         linhas_tex.append(
-            f"{CARGA_LABEL[carga]} & {T} & {fmt_dec(S_medido, 2)} & {fator_str} & "
-            f"{S_par_str} & {E_par_T_str} & {E_par_fisico_str} \\\\"
+            f"{CARGA_LABEL[carga]} & {T} & {fmt_dec(S_abs, 2)} & {fator_str} & "
+            f"{s_rel_str} & {e_T_str} & {e_fis_str} \\\\"
         )
-        linhas_dat.append(f"{CARGA_LABEL[carga]}\t{S_medido:.2f}\t{S_par:.2f}\t{T}")
+        linhas_dat.append(f"{CARGA_LABEL[carga]}\t{S_abs:.2f}\t{S_rel:.2f}\t{T}")
+
     write_tex("tab_speedup_corrigido.tex", linhas_tex)
-    write_dat("fig_speedup.dat", "carga\tS_medido\tS_paralelo\tT_ideal", linhas_dat)
+    write_dat("fig_speedup.dat", "carga\tS_abs\tS_rel\tT_ideal", linhas_dat)
 
 
 # ---------------------------------------------------------------------------
 def main():
     rows = load_runs(CSV_PATH)
-    print(f"[info] {len(rows)} execuções carregadas de {CSV_PATH.relative_to(ROOT) if CSV_PATH.is_relative_to(ROOT) else CSV_PATH}")
+    print(f"[info] {len(rows)} execuções carregadas de "
+          f"{CSV_PATH.relative_to(ROOT) if CSV_PATH.is_relative_to(ROOT) else CSV_PATH}")
 
     checar_seq_par(rows)
+
     tabela_tempos(rows)
     tabela_speedup(rows)
     tabela_vazao(rows)
@@ -435,9 +479,11 @@ def main():
     fatores = tabela_monothread(rows)
     tabela_speedup_corrigido(rows, fatores)
 
-    print("\nFeito. Os arquivos results/plot/tab_*.tex são pensados para \\input{} dentro dos")
-    print("tabulars já existentes em main.tex (entre \\midrule e \\bottomrule),")
-    print("e os fig_*.dat para \\addplot table {...} nas figuras 1-3.")
+    print("\nFeito. Arquivos em results/plot/:")
+    print("  tab_*.tex  → \\input{} entre \\midrule e \\bottomrule no main.tex")
+    print("  fig_*.dat  → \\addplot table {...} nas figuras pgfplots")
+    print("\nNota: tab_speedup e tab_varredura agora têm colunas extras (S_rel, E_rel).")
+    print("Atualize os cabeçalhos das tabelas correspondentes no main.tex.")
 
 
 if __name__ == "__main__":
