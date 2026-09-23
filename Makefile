@@ -1,6 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -fopenmp -std=c99 # Flags de otimização (-O2), avisos (-Wall, -Wextra) e OpenMP
-# Talvez depois testar com -O3 no lugar de -02 e -march=native
+CFLAGS = -Wall -Wextra -fopenmp -O2 -std=c99 # Flags de otimização (-O2), avisos (-Wall, -Wextra) e OpenMP. NÃO PRECISA DE -march=native
 INC = -Iinclude
 LDFLAGS = -lm
 
@@ -15,12 +14,16 @@ fire_seq: src/fire_seq.c
 fire_omp: src/fire_omp.c
 	$(CC) $(CFLAGS) $(INC) $^ -o $@ $(LDFLAGS)
 
-# Compila variantes da versão paralela injetando macros do scheduling e diferentes chunks pra comparação (-DSCHED)
+# Compila variantes da versão paralela injetando macros do scheduling pra comparação (-DSCHED)
 experimentos: fire_seq
 	$(CC) $(CFLAGS) -DSCHED="static" $(INC) src/fire_omp.c -o fire_omp_static $(LDFLAGS)
-	$(CC) $(CFLAGS) -DSCHED="dynamic,16" $(INC) src/fire_omp.c -o fire_omp_dyn_16 $(LDFLAGS)
-	$(CC) $(CFLAGS) -DSCHED="dynamic,128" $(INC) src/fire_omp.c -o fire_omp_dyn_128 $(LDFLAGS)
-	$(CC) $(CFLAGS) -DSCHED="dynamic,1024" $(INC) src/fire_omp.c -o fire_omp_dyn_1024 $(LDFLAGS)
+	$(CC) $(CFLAGS) -DSCHED="static,1024" $(INC) src/fire_omp.c -o fire_omp_static_1024 $(LDFLAGS)
+	$(CC) $(CFLAGS) -DSCHED="dynamic,1024" $(INC) src/fire_omp.c -o fire_omp_dynamic_1024 $(LDFLAGS)
+	$(CC) $(CFLAGS) -DSCHED="guided" $(INC) src/fire_omp.c -o fire_omp_guided $(LDFLAGS)
+ 
+# Roda a bateria de benchmarks (compila os binarios de experimento e chama o script de coleta)
+benchmark: experimentos
+	@bash scripts/run_benchmarks.sh
 
 # Função multi-linha em Bash para automação dos testes de validação
 define run_tests
@@ -60,7 +63,7 @@ test: fire_seq fire_omp
 
 # Remove todos os arquivos executáveis gerados
 clean:
-	rm -f fire_seq fire_omp fire_omp_static fire_omp_dyn_*
+	rm -f fire_seq* fire_omp*
 
 # Declara alvos virtuais para evitar conflito com arquivos de mesmo nome no sistema
 .PHONY: all test test_seq test_omp run clean
