@@ -3,7 +3,7 @@ CFLAGS = -Wall -Wextra -fopenmp -O2 -std=c99 # Flags de otimização (-O2), avis
 INC = -Iinclude
 LDFLAGS = -lm
 
-# Lmpa binários antigos e compila as versões sequencial e paralela
+# Limpa binários antigos e compila as versões sequencial e paralela
 all: clean fire_seq fire_omp
 
 # Compila a versão sequencial a partir de src/fire_seq.c

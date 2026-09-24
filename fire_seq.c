@@ -10,7 +10,6 @@ typedef struct {
     int horizontal;
 } DIRECAO;
 
-// clang-format off
 #define DIRECAO_NORTE    (DIRECAO){-1,  0}
 #define DIRECAO_NORDESTE (DIRECAO){-1,  1}
 #define DIRECAO_LESTE    (DIRECAO){ 0,  1}
@@ -27,18 +26,15 @@ static const DIRECAO VIZINHOS[8] = {
     DIRECAO_SUL,      DIRECAO_SUDOESTE,
     DIRECAO_OESTE,    DIRECAO_NOROESTE
 };
-// clang-format on
 
 /* Tipo de cobertura de terreno de cada célula, sorteado na geração do mapa (gerar_terreno()) */
 typedef enum { COBERTURA_CODIGO_AGUA = 0, COBERTURA_CODIGO_SOLO, COBERTURA_CODIGO_VEGETACAO, COBERTURA_CODIGO_FLORESTA } COBERTURA_CODIGO;
 
 /* Geração da cobertura (rand % 100) */
-// clang-format off
 #define COBERTURA_MAX_AGUA     9  // 0–9   (10%)
 #define COBERTURA_MAX_SOLO     19 // 10–19 (10%)
 #define COBERTURA_MAX_RASTEIRA 54 // 20–54 (35%)
 #define COBERTURA_MAX_FLORESTA 99 // 55–99 (45%)
-// clang-format on
 
 /* Multiplicador de combustível usado no cálculo do potencial de ignição (potencial_ignicao())
 Água e solo não queimam, então ficam em 0 */
@@ -151,7 +147,6 @@ int peso_vizinho(int prop_linha, int prop_coluna, int vento_linha, int vento_col
 
 /* Calcula o potencial de ignição I a partir da soma dos pesos dos vizinhos em chamas (S), do fator de combustível da célula e da umidade */
 int potencial_ignicao(int S, int fator_combustivel, int umidade) {
-    // Não tem porque trabalhar com ponto flutuante para <=
     return (S * fator_combustivel * (100 - umidade)) / 100;
 }
 
@@ -373,11 +368,9 @@ void print_data(COUNTERS cnt, int passo_atual, PICO pico, double pct_queimado, d
 }
 
 int main(int argc, char *argv[]) {
-    /* Valida a quantidade de argumentos da linha de comando */
     if (validar_argc(argc, argv[0]) != LEITURA_OK)
         return EXIT_FAILURE;
 
-    /* Abre o arquivo de entrada passado por argumento */
     FILE *input = abrir_arquivo(argv[argc - 1]);
     if (input == NULL)
         return EXIT_FAILURE;
@@ -386,14 +379,12 @@ int main(int argc, char *argv[]) {
     unsigned int seed;
     LEITURA_STATUS status;
 
-    /* Lê as configurações gerais da simulação (L, C, P, T, seed, LIMIAR) */
     status = ler_config_geral(input, &L, &C, &P, &T, &seed, &LIMIAR);
     if (status != LEITURA_OK) {
         fclose(input);
         return EXIT_FAILURE;
     }
 
-    /* Lê a configuração da direção e intensidade do vento */
     int vento_linha, vento_coluna, vento_intensidade;
     status = ler_config_vento(input, &vento_linha, &vento_coluna, &vento_intensidade);
     if (status != LEITURA_OK) {
@@ -401,7 +392,6 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    /* Lê a quantidade de focos iniciais e de zonas de contenção */
     int F, num_zonas;
     status = ler_contagem_focos_zonas(input, &F, &num_zonas);
     if (status != LEITURA_OK) {
@@ -409,7 +399,6 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    /* Aloca a memória das estruturas da grade */
     long long total_celulas = (long long)L * C;
     CELULAS celulas;
     if (!alocar_cels(&celulas, total_celulas)) {
@@ -418,10 +407,8 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    /* Gera a cobertura e a umidade inicial de cada célula */
     gerar_terreno(&celulas, total_celulas, seed);
 
-    /* Lê e aplica os focos iniciais de incêndio */
     status = ler_focos(input, F, L, C, celulas.cobertura, celulas.estado_atual, celulas.tempo_atual);
     if (status != LEITURA_OK) {
         fclose(input);
@@ -429,7 +416,6 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    /* Lê as zonas de contenção e define o passo de ativação das células */
     status = ler_zonas_contencao(input, num_zonas, L, C, P, celulas.ativacao);
     if (status != LEITURA_OK) {
         fclose(input);
@@ -437,7 +423,6 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    /* Fecha o arquivo de entrada após finalizar as leituras */
     fclose(input);
 
     COUNTERS cnt = {0};
@@ -619,15 +604,11 @@ int main(int argc, char *argv[]) {
         checksum = checksum * 31ULL + (unsigned long long)celulas.tempo_atual[i];
     }
 
-    // Percentuais
-    /* Calcula o percentual de área queimada e de área protegida em relação ao combustível inicial */
     double pct_queimado  = percentual_queimado(cnt.queimadas, cnt.em_chamas, cnt.combustiveis_iniciais);
     double pct_protegido = percentual_protegido(cnt.contencao, cnt.combustiveis_iniciais);
 
-    /* Libera os vetores alocados pra simulação */
     liberar_cels(&celulas);
 
-    /* Imprime a saída final */
     print_data(cnt, passo_atual, pico, pct_queimado, pct_protegido, checksum, tempo_execucao);
 
     return EXIT_SUCCESS;
