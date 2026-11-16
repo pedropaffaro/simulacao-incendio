@@ -1,0 +1,17 @@
+# Binários
+entrega/fire_mpi_omp
+testes/bin/
+
+# Temporários dos scripts de teste
+testes/.tmp/
+testes/hosts/hosts.txt
+
+# Auxiliares do LaTeX
+relatorio/*.aux
+relatorio/*.log
+relatorio/*.out
+relatorio/*.toc
+relatorio/main.pdf
+
+# Pacote da entrega
+trab2_entrega.zip

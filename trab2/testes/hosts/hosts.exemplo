@@ -1,0 +1,7 @@
+# Exemplo de arquivo de hosts (formato do Open MPI). Copie para hosts.txt e troque pelos nos do cluster.
+# Uma linha por no. slots = quantos processos MPI o no aceita.
+# Para rodar NPrc processos com T threads cada, o ideal e NPrc x T nao passar do total de nucleos dos nos usados.
+no01 slots=4
+no02 slots=4
+no03 slots=4
+no04 slots=4
