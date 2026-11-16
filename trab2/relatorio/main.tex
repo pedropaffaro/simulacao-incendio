@@ -1,4 +1,3 @@
-%=====================================================================
 %  SSC0903 - Computacao de Alto Desempenho
 %  TB2 - Simulacao paralela em C/MPI/OpenMP da propagacao direcional de incendio
 %
@@ -7,7 +6,6 @@
 %  As tabelas, as figuras e os numeros citados no texto vem da pasta plot/,
 %  gerada por testes/scripts/process_results.py. No Overleaf, envie este
 %  arquivo junto com a pasta plot/ inteira.
-%=====================================================================
 \documentclass[11pt,a4paper]{article}
 
 \usepackage[utf8]{inputenc}
@@ -31,7 +29,7 @@
 
 \pgfplotsset{compat=1.17}
 
-% ---------- realce de codigo C/MPI/OpenMP ----------
+% realce de codigo C/MPI/OpenMP
 \definecolor{cmt}{RGB}{106,115,125}
 \definecolor{kw}{RGB}{0,92,197}
 \definecolor{str}{RGB}{3,106,87}
@@ -68,9 +66,10 @@
 \renewcommand{\lstlistingname}{Código}
 
 \newcommand{\TODO}[1]{\textcolor{red}{\textbf{[TODO: #1]}}}
+
 \newcommand{\pct}{\%}
 
-% ---------- valores, tabelas e figuras gerados pelos scripts ----------
+% valores, tabelas e figuras gerados pelos scripts
 % \Valor{chave} escreve um numero medido (definido em plot/valores.tex) ou um TODO em vermelho se ele ainda nao existe
 % \InputPlot{arquivo} carrega uma tabela ou figura de plot/ ou um TODO em vermelho se o arquivo ainda nao existe
 \newcommand{\DefValor}[2]{\expandafter\def\csname val@#1\endcsname{#2}}
@@ -82,7 +81,6 @@
 \emergencystretch=3em
 \hbadness=10000
 
-%=====================================================================
 \title{\vspace{-1.5cm}
   \large Universidade de São Paulo\\
   \large Instituto De Ciências Matemáticas e de Computação\\
@@ -99,19 +97,17 @@
 }
 \date{São Carlos, \today}
 
-%=====================================================================
 \begin{document}
 \maketitle
 
 \begin{abstract}
 \noindent
-Este trabalho apresenta a versão paralela híbrida, em C com MPI e OpenMP (\texttt{fire\_mpi\_omp.c}), do autômato celular que simula a propagação de incêndio em uma área florestal sujeita a vento direcional constante e a zonas de contenção ativadas em passos pré-determinados, cuja versão sequencial foi desenvolvida no primeiro trabalho. O projeto do algoritmo paralelo segue a metodologia PCAM e resulta em uma decomposição de domínio em blocos contíguos de linhas, um por processo MPI, com uma linha fantasma em cada fronteira, e em uma subdivisão de cada bloco entre as $T$ \emph{threads} do processo. A comunicação usa apenas primitivas coletivas: \emph{broadcast} dos parâmetros, \emph{scatter} e \emph{gather} da matriz, troca das linhas de fronteira com a coletiva de vizinhança sobre uma topologia cartesiana e redução global dos contadores, que também compartilha a condição de parada. Dentro de cada processo, uma região paralela persistente combina \texttt{omp for}, \texttt{simd}, reduções e tarefas, estas últimas usadas para calcular as linhas de fronteira assim que as linhas fantasmas chegam, enquanto o restante do bloco já é processado. Nas \Valor{numExecucoesPar} execuções paralelas realizadas (\Valor{numCargas} cargas, NPrc em \{\Valor{listaNP}\} e $T$ em \{\Valor{listaT}\}), os resultados foram \Valor{resultadoValidacao} aos da versão sequencial em todos os campos exceto o tempo. Na carga \Valor{cargaRef} (\Valor{dimensoesRef} células, \Valor{passosRef} passos), o tempo do núcleo da simulação caiu de $\Valor{tempoSeqRef}$ segundos na versão sequencial para $\Valor{melhorTempo}$ segundos com \Valor{melhorNP} processos de \Valor{melhorT} \emph{thread}(s), um \emph{speedup} absoluto de $\Valor{melhorSpeedupAbs}\times$ e eficiência de $\Valor{melhorEficienciaAbs}\pct$ sobre os \Valor{melhorP} núcleos utilizados.
+Este trabalho apresenta a versão paralela híbrida, em C com MPI e OpenMP (\texttt{fire\_mpi\_omp.c}), do autômato celular que simula a propagação de incêndio em uma área florestal sujeita a vento direcional constante e a zonas de contenção ativadas em passos pré-determinados, cuja versão sequencial foi desenvolvida no primeiro trabalho. O projeto do algoritmo paralelo segue a metodologia PCAM. A matriz é dividida em blocos de linhas consecutivas, um para cada processo MPI, e dentro de cada processo as linhas do bloco são divididas entre as $T$ \emph{threads}. Como o próximo estado de uma célula depende das células ao redor, cada processo guarda também uma cópia da linha mais próxima de cada bloco vizinho, e essas cópias são atualizadas a cada passo. Toda a comunicação entre processos usa primitivas coletivas do MPI: os parâmetros são enviados a todos os processos, a matriz é distribuída no início e reunida no final, os processos vizinhos trocam suas linhas de borda e os contadores de todos os blocos são somados em totais globais. Como todos os processos recebem esses totais, todos decidem parar no mesmo passo. Dentro de cada processo, uma única região paralela OpenMP é mantida durante toda a simulação e combina \texttt{omp for}, \texttt{simd}, reduções e tarefas. As tarefas calculam as duas linhas do bloco que dependem dos processos vizinhos, enquanto as demais \emph{threads} já calculam o restante do bloco. Nas \Valor{numExecucoesPar} execuções paralelas realizadas (\Valor{numCargas} cargas, NPrc em \{\Valor{listaNP}\} e $T$ em \{\Valor{listaT}\}), os resultados foram \Valor{resultadoValidacao} aos da versão sequencial em todos os campos exceto o tempo. Na carga \Valor{cargaRef} (\Valor{dimensoesRef} células, \Valor{passosRef} passos), o tempo do núcleo da simulação caiu de $\Valor{tempoSeqRef}$ segundos na versão sequencial para $\Valor{melhorTempo}$ segundos com \Valor{melhorNP} processos de \Valor{melhorT} \emph{thread}(s), um \emph{speedup} absoluto de $\Valor{melhorSpeedupAbs}\times$ e eficiência de $\Valor{melhorEficienciaAbs}\pct$ sobre os \Valor{melhorP} núcleos utilizados.
 \end{abstract}
 
 \tableofcontents
 \vspace{0.5cm}
 
-%=====================================================================
 \section{Introdução}
 \label{sec:intro}
 
@@ -123,7 +119,6 @@ Em relação à versão OpenMP, a principal dificuldade nova é que a matriz dei
 
 O relatório está organizado da seguinte forma. A Seção~\ref{sec:base} resume o que foi reaproveitado do primeiro trabalho. A Seção~\ref{sec:pcam} apresenta o projeto do algoritmo paralelo seguindo a metodologia PCAM. A Seção~\ref{sec:impl} descreve a implementação em C/MPI/OpenMP. A Seção~\ref{sec:validacao} valida a versão paralela contra a sequencial. A Seção~\ref{sec:ambiente} caracteriza o ambiente experimental, a Seção~\ref{sec:resultados} apresenta tempos, \emph{speedup} e eficiência, a Seção~\ref{sec:analise} discute os resultados e a Seção~\ref{sec:conclusao} traz as considerações finais. O Apêndice~\ref{sec:apendice-execucao} apresenta um guia de compilação e execução e o Apêndice~\ref{sec:apendice-tabelas} reúne as tabelas completas das demais cargas.
 
-%=====================================================================
 \section{Base reaproveitada do primeiro trabalho}
 \label{sec:base}
 
@@ -138,16 +133,15 @@ A versão híbrida mantém as regras do modelo, as estruturas de dados e as fun�
 
 A versão sequencial entregue no primeiro trabalho (\texttt{fire\_seq.c}) é usada neste relatório como referência de corretude (Seção~\ref{sec:validacao}) e como base do \emph{speedup} absoluto (Seção~\ref{sec:resultados}).
 
-%=====================================================================
 \section{Projeto do algoritmo paralelo (PCAM)}
 \label{sec:pcam}
 
-O projeto seguiu as quatro etapas da metodologia PCAM. Nas duas primeiras (particionamento e comunicação) o problema é descrito com a granularidade mais fina possível, sem considerar a máquina nem o custo das tarefas. A arquitetura alvo só entra a partir da aglomeração: um \emph{cluster} MIMD com memória distribuída entre os nós e memória compartilhada dentro de cada nó, utilizado por NPrc processos MPI com $T$ \emph{threads} cada.
+O projeto seguiu as quatro etapas da metodologia PCAM. Nas duas primeiras (particionamento e comunicação) o problema é descrito com a granularidade mais fina possível, sem considerar a máquina nem o custo das tarefas. A máquina só é considerada a partir da aglomeração. Ela é um \emph{cluster} em que cada nó tem a sua própria memória e vários núcleos que compartilham essa memória, utilizado por NPrc processos MPI com $T$ \emph{threads} cada.
 
 \subsection{Particionamento}
 \label{sec:particionamento}
 
-A simulação tem $P$ passos sobre $L \cdot C$ células. Os passos são inerentemente sequenciais entre si, porque o passo $p+1$ só pode ser calculado a partir do resultado completo do passo $p$. Dentro de um passo, porém, o problema admite uma decomposição de dados em que cada célula é tratada de forma independente. Buscando a granularidade mais fina possível, o trabalho de um passo $p$ é dividido nas seguintes tarefas.
+A simulação tem $P$ passos sobre $L \cdot C$ células. Os passos são inerentemente sequenciais entre si, porque o passo $p+1$ só pode ser calculado a partir do resultado completo do passo $p$. Dentro de um passo, porém, o problema pode ser dividido pelos dados, com cada célula tratada de forma independente. Buscando a granularidade mais fina possível, o trabalho de um passo $p$ é dividido nas seguintes tarefas.
 
 \begin{enumerate}[label=(\roman*)]
     \item \textbf{Ativação.} Uma tarefa por célula verifica se \texttt{ativacao[i]} é igual a $p$ e se a célula está intacta e, nesse caso, muda seu estado para contenção. São $L \cdot C$ tarefas independentes entre si, pois cada uma lê e escreve apenas a própria célula.
@@ -166,7 +160,7 @@ Fora do laço de passos existem ainda as tarefas de preparação e de finalizaç
 Com as tarefas definidas na granularidade mais fina, as necessidades de comunicação entre elas são as seguintes.
 
 \begin{itemize}
-    \item \textbf{Local e estruturada (vizinhança).} Cada tarefa de contribuição de um vizinho precisa do estado atual da célula vizinha, que no passo $p$ é produzido pela tarefa de ativação daquela célula e, antes disso, pela tarefa de decisão dela no passo $p-1$. O padrão é um estêncil de oito pontos: cada célula envia o seu estado para as oito células ao redor. Essa comunicação é estática (o padrão não muda ao longo da simulação) e síncrona (todas as ativações do passo precisam ter terminado antes das contribuições, e todas as decisões do passo antes do passo seguinte).
+    \item \textbf{Local e estruturada (vizinhança).} Cada tarefa de contribuição de um vizinho precisa do estado atual da célula vizinha, que no passo $p$ é produzido pela tarefa de ativação daquela célula e, antes disso, pela tarefa de decisão dela no passo $p-1$. O padrão é o mesmo para todas as células: cada uma envia o seu estado para as oito células ao redor. Essa comunicação é estática (o padrão não muda ao longo da simulação) e síncrona (todas as ativações do passo precisam ter terminado antes das contribuições, e todas as decisões do passo antes do passo seguinte).
     \item \textbf{Entre níveis da redução.} As tarefas de soma recebem os resultados de duas tarefas do nível anterior, tanto na soma dos pesos de uma célula quanto na soma dos indicadores de estatísticas, o que exige sincronização entre níveis.
     \item \textbf{Global.} O resultado da condição de parada precisa chegar a todas as tarefas de todas as células, pois é ele que decide se o passo seguinte existe. O número do passo atual também é uma informação global, usada por todas as tarefas de ativação. Os parâmetros constantes (\texttt{LIMIAR}, dimensões e pesos direcionais, que dependem só do vento) são necessários a todas as tarefas de decisão e de contribuição.
     \item \textbf{Distribuição e coleta.} A tarefa que gera a matriz precisa entregar a cada célula a sua cobertura, a sua umidade, o seu estado inicial e o seu passo de ativação. No final, o estado e o tempo de todas as células precisam chegar, na ordem linear da matriz, à tarefa que calcula o \emph{checksum}.
@@ -177,21 +171,21 @@ Não existe comunicação entre tarefas de decisão de células diferentes dentr
 \subsection{Aglomeração}
 \label{sec:aglomeracao}
 
-Na granularidade do particionamento, a simulação teria da ordem de dezenas de tarefas por célula por passo, cada uma com uma única comparação ou soma, e o custo de criar, sincronizar e comunicar essas tarefas seria muito maior que o trabalho útil. A aglomeração aumenta a granularidade para reduzir esse custo, considerando a arquitetura alvo (memória distribuída entre nós, onde a comunicação é por mensagens e é cara, e memória compartilhada dentro do nó, onde a comunicação é um acesso à memória).
+Na granularidade do particionamento, a simulação teria da ordem de dezenas de tarefas por célula por passo, cada uma com uma única comparação ou soma, e o custo de criar, sincronizar e comunicar essas tarefas seria muito maior que o trabalho útil. A aglomeração aumenta a granularidade para reduzir esse custo, considerando a máquina: entre nós diferentes a comunicação é feita por mensagens e é cara, e dentro de um mesmo nó ela é apenas um acesso à memória.
 
 \paragraph{Tarefas de uma mesma célula.} As oito tarefas de contribuição, as sete somas e a decisão de uma célula são aglomeradas em uma única tarefa executada sequencialmente. A soma dos oito pesos vira um laço de tamanho fixo, sem desvios, que é vetorizado (\texttt{simd}) em vez de paralelizado. Com isso, toda a comunicação entre níveis da soma dos pesos deixa de existir.
 
-\paragraph{Células em blocos de linhas.} As tarefas de células vizinhas são aglomeradas em blocos contíguos de linhas inteiras da matriz, um bloco por processo. A comunicação de vizinhança entre células do mesmo bloco se torna acesso local, e apenas as células da primeira e da última linha de cada bloco continuam dependendo de células de outro bloco. Essa dependência é resolvida com replicação de dados: cada bloco mantém uma cópia da linha vizinha de cada lado (linhas fantasmas), atualizada uma vez por passo. A escolha de blocos de linhas (decomposição 1D), e não de sub-grades (2D), se justifica por três motivos: (a) como a matriz é armazenada linearmente por linhas, um bloco de linhas e cada linha de fronteira são regiões contíguas de memória, que podem ser distribuídas e trocadas sem empacotamento; (b) cada bloco tem no máximo dois vizinhos, enquanto em 2D seriam até oito, por causa das diagonais do estêncil; (c) o volume trocado por bloco e por passo é de $2C$ células, contra $(L/\text{NPrc}) \cdot C$ células processadas, uma razão de $2\,\text{NPrc}/L$ que é pequena para as dimensões de interesse. A decomposição 2D reduziria o volume de dados nas fronteiras apenas para um número de processos bem maior do que o disponível.
+\paragraph{Células em blocos de linhas.} As tarefas de células vizinhas são aglomeradas em blocos contíguos de linhas inteiras da matriz, um bloco por processo. A comunicação de vizinhança entre células do mesmo bloco se torna acesso local, e apenas as células da primeira e da última linha de cada bloco continuam dependendo de células de outro bloco. Essa dependência é resolvida guardando, em cada bloco, uma cópia da linha mais próxima de cada bloco vizinho. Essas cópias são chamadas neste relatório de linhas fantasmas e são atualizadas uma vez por passo. A escolha de blocos de linhas inteiras, e não de retângulos menores que dividissem também as colunas, se justifica por três motivos: (a) como a matriz é armazenada linearmente por linhas, um bloco de linhas e cada linha de fronteira são regiões contíguas de memória, que podem ser distribuídas e trocadas sem empacotamento; (b) cada bloco tem no máximo dois vizinhos, enquanto com retângulos seriam até oito, porque os vizinhos diagonais também contam; (c) o volume trocado por bloco e por passo é de $2C$ células, contra $(L/\text{NPrc}) \cdot C$ células processadas, uma razão de $2\,\text{NPrc}/L$ que é pequena para as dimensões de interesse. A divisão em retângulos só reduziria o volume de dados trocado para um número de processos bem maior do que o disponível.
 
-\paragraph{O que é replicado.} A contribuição de um vizinho depende apenas de ele estar ou não em chamas. Por isso, só o vetor de estados precisa de linhas fantasmas; cobertura, umidade, tempo de queima e mapa de contenção nunca são trocados durante a simulação. Além disso, a ativação das zonas só transforma células intactas em contenção e nunca altera quais células estão em chamas, de modo que uma única troca por passo é suficiente.
+\paragraph{O que é copiado.} A contribuição de um vizinho depende apenas de ele estar ou não em chamas. Por isso, só o vetor de estados precisa de linhas fantasmas; cobertura, umidade, tempo de queima e mapa de contenção nunca são trocados durante a simulação. Além disso, a ativação das zonas só transforma células intactas em contenção e nunca altera quais células estão em chamas, de modo que uma única troca por passo é suficiente.
 
-\paragraph{Sub-blocos dentro do bloco.} Dentro de um processo, as linhas do bloco são subdivididas em $T$ sub-blocos contíguos de linhas, um por \emph{thread}. Como as \emph{threads} compartilham a memória, não há mensagens entre sub-blocos nem linhas fantasmas internas. Sub-blocos contíguos mantêm cada \emph{thread} escrevendo em uma região própria dos vetores de próximo passo, o que limita o falso compartilhamento às fronteiras entre sub-blocos.
+\paragraph{Sub-blocos dentro do bloco.} Dentro de um processo, as linhas do bloco são subdivididas em $T$ sub-blocos contíguos de linhas, um por \emph{thread}. Como as \emph{threads} compartilham a memória, não há mensagens entre sub-blocos nem linhas fantasmas internas. Com sub-blocos contíguos, cada \emph{thread} escreve em uma região própria dos vetores de próximo passo. Duas \emph{threads} só escrevem em posições de memória próximas uma da outra no limite entre dois sub-blocos, o que evita que uma atrapalhe a \emph{cache} da outra.
 
-\paragraph{Linhas de fronteira separadas do miolo.} As duas linhas de fronteira de um bloco são as únicas que dependem das linhas fantasmas e, portanto, da comunicação do passo. Elas são mantidas como duas tarefas separadas do restante do bloco (o miolo). Assim, o miolo pode ser calculado enquanto as mensagens de fronteira ainda estão em trânsito, sobrepondo comunicação e computação.
+\paragraph{Linhas de fronteira separadas do miolo.} A primeira e a última linha de um bloco, chamadas aqui de linhas de fronteira, são as únicas que dependem das linhas fantasmas e, portanto, da comunicação do passo. Elas são mantidas como duas tarefas separadas do restante do bloco, chamado aqui de miolo. Assim, o miolo pode ser calculado enquanto as mensagens ainda estão em trânsito, e o processo não fica parado esperando a comunicação.
 
-\paragraph{Estatísticas e condição de parada.} A árvore de redução sobre $L \cdot C$ células é substituída por três níveis: cada \emph{thread} acumula os seis contadores do seu sub-bloco em variáveis privadas; os acumuladores das \emph{threads} são combinados dentro do processo; e uma única redução entre os NPrc processos soma os seis contadores de uma vez. Como o resultado dessa redução é entregue a todos os processos, cada um avalia localmente a condição de parada com os mesmos valores globais. A difusão global da condição de parada é absorvida pela própria redução e não exige mensagem adicional.
+\paragraph{Estatísticas e condição de parada.} A árvore de redução sobre $L \cdot C$ células é substituída por três níveis: cada \emph{thread} acumula os seis contadores do seu sub-bloco em variáveis privadas; os acumuladores das \emph{threads} são combinados dentro do processo; e uma única redução entre os NPrc processos soma os seis contadores de uma vez. Como o resultado dessa redução é entregue a todos os processos, cada um avalia localmente a condição de parada com os mesmos valores globais. Assim, a condição de parada não precisa de uma mensagem própria.
 
-\paragraph{Preparação e finalização.} A leitura, a validação, a geração da matriz, a aplicação dos focos, a construção do mapa de contenção e a contagem inicial são aglomeradas em uma única tarefa de preparação, porque a geração é sequencial por natureza e as demais dependem da matriz completa (por exemplo, um foco só é válido se cair em célula combustível). Em vez de cada processo receber a divisão das linhas e os pesos direcionais, eles são recalculados localmente a partir dos parâmetros, trocando comunicação por uma computação redundante de custo desprezível. O \emph{checksum} e a impressão formam a tarefa de finalização, que recebe os blocos de volta.
+\paragraph{Preparação e finalização.} A leitura, a validação, a geração da matriz, a aplicação dos focos, a construção do mapa de contenção e a contagem inicial são aglomeradas em uma única tarefa de preparação, porque a geração é sequencial por natureza e as demais dependem da matriz completa (por exemplo, um foco só é válido se cair em célula combustível). Em vez de cada processo receber a divisão das linhas e os pesos direcionais, eles são recalculados localmente a partir dos parâmetros, o que evita mensagens ao custo de uma conta repetida e muito barata. O \emph{checksum} e a impressão formam a tarefa de finalização, que recebe os blocos de volta.
 
 O número de blocos e o de sub-blocos são parâmetros (NPrc e $T$), o que mantém a flexibilidade para diferentes quantidades de nós e de núcleos.
 
@@ -201,11 +195,11 @@ O número de blocos e o de sub-blocos são parâmetros (NPrc e $T$), o que mant�
 Cada bloco de linhas é mapeado em um processo MPI, e os processos são alocados aos nós do \emph{cluster} pelo \texttt{mpirun}, de acordo com o arquivo de \emph{hosts}. O mapeamento é estático: a divisão é feita uma vez, antes da simulação, e não muda.
 
 \begin{itemize}
-    \item \textbf{Qual processo fica com qual bloco.} Os blocos são atribuídos em ordem de \emph{rank}: o processo $r$ recebe o $r$-ésimo bloco de linhas. Cada bloco tem $\lfloor L/\text{NPrc} \rfloor$ linhas, e os $L \bmod \text{NPrc}$ primeiros processos recebem uma linha a mais, de modo que os tamanhos diferem em no máximo uma linha. Os vizinhos de um bloco são os processos de \emph{rank} $r-1$ e $r+1$, relação registrada em uma topologia cartesiana de uma dimensão, não periódica. Se houver mais processos do que linhas, os processos excedentes ficam sem bloco e não participam da simulação.
+    \item \textbf{Qual processo fica com qual bloco.} Os blocos são atribuídos em ordem de \emph{rank}: o processo $r$ recebe o $r$-ésimo bloco de linhas. Cada bloco tem $\lfloor L/\text{NPrc} \rfloor$ linhas, e os $L \bmod \text{NPrc}$ primeiros processos recebem uma linha a mais, de modo que os tamanhos diferem em no máximo uma linha. Os vizinhos de um bloco são os processos de \emph{rank} $r-1$ e $r+1$. O primeiro e o último processo têm vizinho de um lado só. Se houver mais processos do que linhas, os processos excedentes ficam sem bloco e não participam da simulação.
     \item \textbf{Processo raiz.} O processo de \emph{rank} 0 executa a tarefa de preparação, distribui os blocos, recebe-os de volta ao final, calcula o \emph{checksum} e imprime o resultado. Ele também é responsável por um bloco, como os demais.
     \item \textbf{\emph{Threads}.} Os sub-blocos de um processo são mapeados nas suas $T$ \emph{threads}, que o sistema operacional distribui pelos núcleos do nó. A divisão das linhas entre as \emph{threads} é estática por padrão (\texttt{schedule(static)}), coerente com os sub-blocos contíguos definidos na aglomeração. As duas tarefas de fronteira são executadas por qualquer \emph{thread} que esteja livre. Todas as chamadas MPI de um processo são feitas pela sua \emph{thread} principal.
     \item \textbf{Balanceamento.} Os blocos têm praticamente o mesmo número de células, mas o custo de uma célula depende do seu estado: uma célula intacta examina os oito vizinhos, enquanto as demais apenas repetem ou decrementam um valor. Como a maior parte das células de qualquer bloco é intacta ou não combustível durante toda a simulação, e ambas são percorridas em todos os passos, a diferença de carga entre blocos é limitada. Um balanceamento dinâmico exigiria migrar linhas entre processos a cada mudança da frente de fogo, com custo de comunicação maior que o desbalanceamento que ele corrigiria, e por isso não foi adotado.
-    \item \textbf{Processos e \emph{threads} por nó.} O mesmo total de núcleos pode ser ocupado por poucas tarefas MPI com muitas \emph{threads} ou por muitas tarefas MPI com poucas \emph{threads}. A primeira opção reduz o número de mensagens e de linhas fantasmas; a segunda reduz o custo de sincronização entre \emph{threads} e mantém cada bloco menor na memória. Essa escolha é avaliada experimentalmente na Seção~\ref{sec:hibrido}.
+    \item \textbf{Processos e \emph{threads} por nó.} A alocação é feita em função da máquina, e não da carga de trabalho: os processos são distribuídos entre os nós do \emph{cluster} e as \emph{threads} de cada processo entre os núcleos do seu nó. O mesmo total de núcleos pode ser ocupado por poucos processos com muitas \emph{threads} ou por muitos processos com poucas \emph{threads}. A primeira opção reduz o número de mensagens e de linhas fantasmas; a segunda reduz o custo de sincronização entre \emph{threads} e mantém cada bloco menor na memória. Essa escolha é avaliada experimentalmente na Seção~\ref{sec:hibrido}.
 \end{itemize}
 
 A Figura~\ref{fig:decomposicao} ilustra o resultado do projeto para três processos.
@@ -251,11 +245,10 @@ A Figura~\ref{fig:decomposicao} ilustra o resultado do projeto para três proces
   \end{scope}
   \draw[->, thick, gray] (3.3,2.25) -- (6.1,2.25);
 \end{tikzpicture}
-\caption{Decomposição de domínio resultante do projeto PCAM: blocos contíguos de linhas por processo e, em cada processo, linhas fantasmas trocadas com os vizinhos, linhas de fronteira calculadas por tarefas e miolo dividido entre as \emph{threads}.}
+\caption{Divisão da matriz resultante do projeto PCAM. À esquerda, os blocos de linhas de cada processo. À direita, o que o processo 1 guarda: as linhas fantasmas (cópias das linhas dos vizinhos), as duas linhas de fronteira, calculadas por tarefas, e o miolo, dividido entre as \emph{threads}.}
 \label{fig:decomposicao}
 \end{figure}
 
-%=====================================================================
 \section{Implementação em C/MPI/OpenMP}
 \label{sec:impl}
 
@@ -274,7 +267,7 @@ Fase & O que acontece & Primitiva MPI & Cronometrada \\
 \midrule
 Preparação      & A raiz lê, valida, gera a matriz, aplica focos, monta o mapa de contenção e conta os estados & -- & não \\
 Configuração    & Status da leitura, parâmetros e contagens iniciais vão para todos & \texttt{MPI\_Bcast} & não \\
-Topologia       & Processos com linhas formam uma grade cartesiana 1D & \texttt{MPI\_Comm\_split}, \texttt{MPI\_Cart\_create} & não \\
+Vizinhança      & Processos com linhas são organizados em fila, cada um com o vizinho de cima e o de baixo & \texttt{MPI\_Comm\_split}, \texttt{MPI\_Cart\_create} & não \\
 Distribuição    & Cada processo recebe o seu bloco de cada vetor & \texttt{MPI\_Scatterv} & não \\
 Simulação       & Ativação, troca de fronteiras, próximo estado, estatísticas globais, troca dos vetores e parada & \texttt{MPI\_Neighbor\_alltoallv}, \texttt{MPI\_Allreduce} & sim \\
 Junção          & A raiz recebe os blocos de estado e de tempo & \texttt{MPI\_Gatherv} & não \\
@@ -285,19 +278,26 @@ Finalização     & A raiz calcula \emph{checksum} e percentuais e imprime & -- 
 \label{tab:fases}
 \end{table}
 
-Toda a comunicação usa primitivas coletivas. Não há \texttt{MPI\_Send} ou \texttt{MPI\_Recv} no programa.
+Toda a comunicação usa primitivas coletivas, isto é, chamadas em que todos os processos do grupo participam ao mesmo tempo. Não há \texttt{MPI\_Send} ou \texttt{MPI\_Recv} no programa.
 
-\subsection{Preparação e difusão da configuração}
+\subsection{Organização do código}
 
-Apenas o processo raiz abre o arquivo de entrada. Ele executa as mesmas funções de leitura e validação do primeiro trabalho e gera a matriz global. O resultado da leitura é a primeira posição de um vetor de inteiros que carrega também os parâmetros da simulação e as contagens iniciais dos estados, enviado com um único \emph{broadcast} (Código~\ref{lst:bcast}). Se a entrada for inválida, a raiz imprime a mensagem de erro e todos os processos encerram de forma ordenada depois do \emph{broadcast}, sem imprimir resultado.
+O fluxo principal não fica concentrado em \texttt{main}. Cada fase da execução tem uma função própria (\texttt{compartilhar\_configuracao}, \texttt{decompor\_dominio}, \texttt{distribuir\_grade}, \texttt{simular}, \texttt{juntar\_grade} e \texttt{imprimir\_resultado}), e \texttt{main} apenas encadeia essas chamadas e trata os dois encerramentos antecipados (entrada inválida e processo sem linhas). Os dados da divisão da matriz (quantas linhas cada processo tem, quem são os vizinhos e os comunicadores MPI) ficam na estrutura \texttt{DECOMPOSICAO}, e os deslocamentos e pesos dos oito vizinhos de uma célula na estrutura \texttt{VIZINHANCA}. A região paralela persistente e todas as diretivas OpenMP do laço ficam juntas em \texttt{simular}.
 
-\begin{lstlisting}[caption={Difusão do status da leitura, dos parâmetros e das contagens iniciais.},label={lst:bcast}]
+\subsection{Preparação e envio da configuração}
+
+Apenas o processo raiz abre o arquivo de entrada. Ele executa as mesmas funções de leitura e validação do primeiro trabalho e gera a matriz global. Em seguida, a raiz envia a todos os processos, com um único \emph{broadcast}, um vetor de inteiros com os parâmetros da simulação e as contagens iniciais dos estados (Código~\ref{lst:bcast}). A primeira posição desse vetor indica se a leitura deu certo. Se a entrada for inválida, a raiz imprime a mensagem de erro e todos os processos, avisados por essa posição, encerram sem imprimir resultado.
+
+\begin{lstlisting}[caption={Envio do resultado da leitura, dos parâmetros e das contagens iniciais a todos os processos.},label={lst:bcast}]
+/* em compartilhar_configuracao() */
 if (rank == PROC_RAIZ)
-    config[CFG_STATUS] = preparar_simulacao(argc, argv, &globais, config);
+    config[CFG_STATUS] = preparar_simulacao(argc, argv, globais, config);
 
 MPI_Bcast(config, CFG_TAMANHO, MPI_INT, PROC_RAIZ, MPI_COMM_WORLD);
+return config[CFG_STATUS] == LEITURA_OK;
 
-if (config[CFG_STATUS] != LEITURA_OK) {
+/* em main() */
+if (!compartilhar_configuracao(argc, argv, suporte_threads, rank, &globais, config)) {
     liberar_cels(&globais);
     MPI_Finalize();
     return EXIT_FAILURE;
@@ -306,11 +306,11 @@ if (config[CFG_STATUS] != LEITURA_OK) {
 
 A geração da cobertura e da umidade permanece sequencial na raiz. Essa é a única forma de reproduzir a sequência de \texttt{rand\_r} exigida pelo enunciado, e ela fica fora do trecho cronometrado.
 
-\subsection{Decomposição de domínio e topologia}
+\subsection{Divisão da matriz entre os processos}
 
-Todos os processos calculam a mesma divisão das linhas (\texttt{dividir\_linhas}), de modo que ela não precisa ser transmitida. Os processos que receberam ao menos uma linha são separados em um comunicador próprio, sobre o qual é criada uma topologia cartesiana de uma dimensão, não periódica e sem reordenação de \emph{ranks}. Um tipo derivado representa uma linha inteira da matriz, o que permite distribuir, trocar e juntar os dados em unidades de linha (Código~\ref{lst:topologia}).
+Todos os processos calculam a mesma divisão das linhas (\texttt{dividir\_linhas}), de modo que ela não precisa ser transmitida. Os processos que receberam ao menos uma linha são reunidos em um comunicador próprio. Sobre ele é criada uma topologia cartesiana de uma dimensão, recurso do MPI que organiza os processos em fila, na ordem dos blocos, e informa a cada um quem é o vizinho de cima e o de baixo. Por fim, um tipo de dado MPI representa uma linha inteira da matriz, para que os envios e recebimentos sejam contados em linhas (Código~\ref{lst:topologia}).
 
-\begin{lstlisting}[caption={Comunicador dos processos ativos, topologia cartesiana e tipo de linha.},label={lst:topologia}]
+\begin{lstlisting}[caption={Comunicador dos processos com linhas, fila de processos e tipo de linha, em \texttt{decompor\_dominio} (prefixo \texttt{dec->} dos campos omitido).},label={lst:topologia}]
 MPI_Comm_split(MPI_COMM_WORLD, linhas_locais > 0 ? 1 : MPI_UNDEFINED, rank, &comm_ativos);
 
 int num_ativos = num_processos < L ? num_processos : L;
@@ -322,54 +322,58 @@ MPI_Type_contiguous(C, MPI_INT, &tipo_linha);
 MPI_Type_commit(&tipo_linha);
 \end{lstlisting}
 
-Cada processo aloca os sete vetores do seu bloco com duas linhas a mais, a fantasma superior (linha local 0) e a fantasma inferior (linha local \texttt{linhas\_locais + 1}). As linhas reais ocupam as posições 1 a \texttt{linhas\_locais}. As linhas fantasmas dos dois vetores de estado são iniciadas como não combustíveis. Nas fronteiras da matriz, onde não há processo vizinho, elas nunca são sobrescritas e por isso nunca contribuem para o potencial de ignição, o que implementa a regra de ignorar vizinhos fora da matriz sem nenhum teste de limite de linha. Somente os limites de coluna continuam sendo verificados, nas células da primeira e da última coluna.
+Cada processo aloca os sete vetores do seu bloco com duas linhas a mais, a fantasma superior (linha local 0) e a fantasma inferior (linha local \texttt{linhas\_locais + 1}). As linhas reais ocupam as posições 1 a \texttt{linhas\_locais}. As linhas fantasmas dos dois vetores de estado são iniciadas como não combustíveis. Na primeira e na última linha da matriz, onde não há processo vizinho, elas nunca são sobrescritas e por isso nunca contribuem para o potencial de ignição. Com isso, a regra de ignorar vizinhos fora da matriz é atendida sem nenhum teste de limite de linha. Somente os limites de coluna continuam sendo verificados, nas células da primeira e da última coluna.
 
 A raiz distribui os blocos de \texttt{cobertura}, \texttt{umidade}, \texttt{estado\_atual}, \texttt{tempo\_atual} e \texttt{ativacao} com cinco chamadas a \texttt{MPI\_Scatterv}, com as quantidades e os deslocamentos expressos em linhas.
 
 \subsection{Laço da simulação}
 \label{sec:laco}
 
-A simulação de cada processo ocorre dentro de uma única região paralela OpenMP, aberta antes do laço de passos e fechada depois dele (Código~\ref{lst:regiao}). Cada passo tem quatro blocos.
+A simulação de cada processo ocorre dentro de uma única região paralela OpenMP, aberta antes do laço de passos e fechada depois dele (Código~\ref{lst:regiao}). Cada passo tem quatro etapas, numeradas no código.
 
 \begin{lstlisting}[caption={Estrutura da região paralela persistente de \texttt{fire\_mpi\_omp.c} (lista de variáveis compartilhadas omitida).},label={lst:regiao}]
 #pragma omp parallel num_threads(T) default(none) shared(...)
 {
-while (passo_atual < P && cnt.em_chamas > 0) {
+while (passo_atual < P && cnt->em_chamas > 0) {
+    int *estado_atual   = celulas->estado_atual;  /* copias privadas dos ponteiros */
+    const int *ativacao = celulas->ativacao;
 
     #pragma omp for simd schedule(SCHED)          /* (1) ativacao das zonas */
     for (long long i = primeira_celula_real; i < fim_celulas_reais; i++) {
-        int deve_ativar = (celulas.ativacao[i] == passo_atual)
-                        & (celulas.estado_atual[i] == ESTADO_INTACTA);
-        celulas.estado_atual[i] = deve_ativar ? ESTADO_CONTENCAO : celulas.estado_atual[i];
+        int deve_ativar = (ativacao[i] == passo_atual) & (estado_atual[i] == ESTADO_INTACTA);
+        estado_atual[i] = deve_ativar ? ESTADO_CONTENCAO : estado_atual[i];
     }
 
     #pragma omp master                            /* (2) fronteiras */
     {
-        trocar_fronteiras(celulas.estado_atual, linhas_locais, C, tipo_linha,
-                          comm_grade, vizinho_cima, vizinho_baixo);
+        trocar_fronteiras(celulas->estado_atual, dec, C);
 
         #pragma omp task default(none) shared(borda_superior, celulas, ...)
-        borda_superior = atualizar_linha(&celulas, 1, C, LIMIAR, ...);
+        borda_superior = atualizar_linha(celulas, 1, C, LIMIAR, ...);
 
         if (linhas_locais > 1) {
             #pragma omp task default(none) shared(borda_inferior, celulas, ...)
-            borda_inferior = atualizar_linha(&celulas, linhas_locais, C, LIMIAR, ...);
+            borda_inferior = atualizar_linha(celulas, linhas_locais, C, LIMIAR, ...);
         }
     }
 
     #pragma omp for schedule(SCHED) reduction(+ : proximo_celulas_em_chamas, \
         ignicoes_no_passo, proximo_nao_combustiveis, proximo_intactas,       \
-        proximo_queimadas, proximo_contencao)     /* (3) miolo do bloco */
+        proximo_queimadas, proximo_contencao)     /* (3) miolo */
     for (int l = 2; l < linhas_locais; l++) {
-        ESTATISTICAS linha = atualizar_linha(&celulas, l, C, LIMIAR, ...);
+        ESTATISTICAS linha = atualizar_linha(celulas, l, C, LIMIAR, ...);
         proximo_celulas_em_chamas += linha.em_chamas;
         /* ... demais contadores ... */
     }
 
     #pragma omp master                            /* (4) fechamento do passo */
     {
-        /* soma miolo + bordas, MPI_Allreduce, troca dos vetores,
-           contadores globais, pico e passo_atual++ */
+        empacotar_estatisticas(estatisticas_locais, miolo, borda_superior, borda_inferior);
+        somar_estatisticas(estatisticas_locais, estatisticas_globais, dec->comm_grade);
+        trocar_buffers(celulas);
+        atualizar_contadores(cnt, pico, estatisticas_globais, passo_atual);
+        /* ... zera os acumuladores ... */
+        passo_atual++;
     }
     #pragma omp barrier
 }
@@ -378,20 +382,20 @@ while (passo_atual < P && cnt.em_chamas > 0) {
 
 \paragraph{(1) Ativação das zonas.} Um \texttt{omp for simd} percorre as células reais do bloco e aplica a ativação sem desvios condicionais, como no primeiro trabalho. A barreira implícita ao final garante que todas as ativações do passo terminaram antes de qualquer leitura do estado atual.
 
-\paragraph{(2) Troca de fronteiras e tarefas de borda.} A \emph{thread} principal envia a primeira e a última linha real do vetor de estados e recebe as duas linhas fantasmas, com uma única chamada coletiva de vizinhança sobre a topologia cartesiana (Código~\ref{lst:halo}). Como \texttt{omp master} não tem barreira implícita, as demais \emph{threads} seguem diretamente para o bloco (3) e já começam a calcular o miolo, que não lê linhas fantasmas. Quando a troca termina, a \emph{thread} principal cria uma tarefa para cada linha de fronteira e também se junta ao bloco (3). As tarefas são executadas por qualquer \emph{thread} que chegue à barreira do bloco (3), e essa barreira só libera a equipe depois que o laço e as duas tarefas terminaram.
+\paragraph{(2) Troca de fronteiras e tarefas de borda.} A \emph{thread} principal envia a primeira e a última linha real do vetor de estados e recebe as duas linhas fantasmas, com uma única chamada a \texttt{MPI\_Neighbor\_alltoallv}, que envia e recebe dos dois vizinhos da fila de uma vez (Código~\ref{lst:halo}). Como \texttt{omp master} não tem barreira implícita, as demais \emph{threads} seguem diretamente para a etapa (3) e já começam a calcular o miolo, que não lê linhas fantasmas. Quando a troca termina, a \emph{thread} principal cria uma tarefa para cada linha de fronteira e também se junta à etapa (3). As tarefas são executadas por qualquer \emph{thread} que chegue à barreira da etapa (3), e essa barreira só libera as \emph{threads} depois que o laço e as duas tarefas terminaram.
 
-\begin{lstlisting}[caption={Troca das linhas de fronteira com a coletiva de vizinhança (deslocamentos em linhas).},label={lst:halo}]
+\begin{lstlisting}[caption={Troca das linhas de fronteira com os dois processos vizinhos (posições contadas em linhas).},label={lst:halo}]
 const int quantidades[2]     = {1, 1};
 const int desloc_envio[2]    = {0, linhas_locais - 1};
 const int desloc_recebido[2] = {0, linhas_locais + 1};
 
-MPI_Neighbor_alltoallv(estado + C, quantidades, desloc_envio, tipo_linha,
-                       estado, quantidades, desloc_recebido, tipo_linha, comm_grade);
+MPI_Neighbor_alltoallv(estado + C, quantidades, desloc_envio, dec->tipo_linha,
+                       estado, quantidades, desloc_recebido, dec->tipo_linha, dec->comm_grade);
 \end{lstlisting}
 
-Na topologia cartesiana de uma dimensão, a ordem dos vizinhos é sempre o de cima e depois o de baixo. Quando um deles não existe (\texttt{MPI\_PROC\_NULL}), a parte correspondente da troca é ignorada pela biblioteca e a linha fantasma permanece não combustível. Para implementações anteriores ao MPI-3, sem coletivas de vizinhança, o código seleciona em tempo de compilação uma alternativa com duas chamadas a \texttt{MPI\_Sendrecv}.
+Nessa chamada, a ordem dos vizinhos é sempre o de cima e depois o de baixo. Quando um deles não existe, a parte correspondente da troca é ignorada pelo MPI e a linha fantasma permanece não combustível. Essa primitiva só existe a partir da versão 3 do MPI. Para versões anteriores, o código seleciona em tempo de compilação uma alternativa com duas chamadas a \texttt{MPI\_Sendrecv}.
 
-\paragraph{(3) Miolo do bloco.} Um \texttt{omp for} distribui as linhas 2 a \texttt{linhas\_locais - 1} entre as \emph{threads}. Cada iteração chama \texttt{atualizar\_linha}, a mesma função usada pelas tarefas de borda, que contém a lógica de atualização do primeiro trabalho: cadeia de decisão por estado, soma vetorizada (\texttt{omp simd reduction}) dos oito vizinhos das células internas e tratamento separado das colunas de borda. A função lê apenas vetores do passo atual e escreve apenas posições da própria linha nos vetores de próximo passo, de modo que linhas diferentes podem ser calculadas simultaneamente. As estatísticas das linhas são acumuladas por \texttt{reduction}.
+\paragraph{(3) Miolo.} Um \texttt{omp for} distribui as linhas 2 a \texttt{linhas\_locais - 1} entre as \emph{threads}. Cada iteração chama \texttt{atualizar\_linha}, a mesma função usada pelas tarefas de borda, que contém a lógica de atualização do primeiro trabalho: a escolha do próximo estado conforme o estado atual, a soma vetorizada (\texttt{omp simd reduction}) dos oito vizinhos das células internas e o tratamento separado da primeira e da última coluna. A função lê apenas vetores do passo atual e escreve apenas posições da própria linha nos vetores de próximo passo, de modo que linhas diferentes podem ser calculadas simultaneamente. As estatísticas das linhas são acumuladas por \texttt{reduction}.
 
 \paragraph{(4) Fechamento do passo.} A \emph{thread} principal soma os acumuladores do miolo com as estatísticas devolvidas pelas duas tarefas de borda e reduz os seis contadores entre os processos com uma única chamada a \texttt{MPI\_Allreduce}. Em seguida troca os ponteiros dos vetores atual e próximo, atualiza os contadores globais, o total e o pico de ignições e incrementa o passo. A barreira explícita depois do bloco impede que as demais \emph{threads} reavaliem a condição do \texttt{while} antes de esses valores estarem prontos.
 
@@ -401,17 +405,17 @@ Na topologia cartesiana de uma dimensão, a ordem dos vizinhos é sempre o de ci
 O programa não usa \texttt{critical}, \texttt{atomic} nem \emph{locks}. A ausência de condições de corrida decorre da estrutura do passo:
 
 \begin{itemize}
-    \item o estado atual só é escrito no bloco (1), por iterações independentes, e nas linhas fantasmas no bloco (2), que nenhuma \emph{thread} do miolo lê; as tarefas de borda, que leem as linhas fantasmas, só são criadas depois que a troca terminou;
+    \item o estado atual só é escrito na etapa (1), por iterações independentes, e nas linhas fantasmas na etapa (2), que nenhuma \emph{thread} do miolo lê; as tarefas de borda, que leem as linhas fantasmas, só são criadas depois que a troca terminou;
     \item os vetores de próximo passo são escritos por linha, e cada linha pertence a exatamente uma iteração do laço ou a exatamente uma tarefa;
     \item os contadores do miolo são variáveis de redução, e cada tarefa de borda escreve em uma estrutura própria, lida somente depois da barreira;
     \item a troca dos ponteiros e a atualização dos contadores e do passo são feitas por uma única \emph{thread}, entre duas barreiras.
 \end{itemize}
 
-As chamadas MPI são feitas apenas pela \emph{thread} principal, dentro de \texttt{omp master}, e por isso o programa solicita o nível \texttt{MPI\_THREAD\_FUNNELED} em \texttt{MPI\_Init\_thread}.
+As chamadas MPI são feitas apenas pela \emph{thread} principal, dentro de \texttt{omp master}, e por isso o programa solicita em \texttt{MPI\_Init\_thread} o nível \texttt{MPI\_THREAD\_FUNNELED}, que é o nível de suporte a \emph{threads} em que apenas a \emph{thread} principal chama o MPI.
 
-A condição de parada é compartilhada corretamente em dois níveis. Entre processos, o \texttt{MPI\_Allreduce} entrega a todos o mesmo total global de células em chamas, e \texttt{passo\_atual} evolui de forma idêntica, de modo que todos decidem parar no mesmo passo. Dentro de um processo, a barreira ao final do passo garante que todas as \emph{threads} avaliem a condição com os mesmos valores.
+A condição de parada é a mesma para todos em dois níveis. Entre processos, o \texttt{MPI\_Allreduce} entrega a todos o mesmo total global de células em chamas, e \texttt{passo\_atual} evolui de forma idêntica, de modo que todos decidem parar no mesmo passo. Dentro de um processo, a barreira ao final do passo garante que todas as \emph{threads} avaliem a condição com os mesmos valores.
 
-O resultado é independente de NPrc e de $T$ porque cada célula é calculada exatamente uma vez por passo, a partir apenas de valores do passo anterior (locais ou replicados nas linhas fantasmas), e porque todas as estatísticas são somas de inteiros, que não dependem da ordem em que são combinadas.
+O resultado é independente de NPrc e de $T$ porque cada célula é calculada exatamente uma vez por passo, a partir apenas de valores do passo anterior (do próprio bloco ou copiados nas linhas fantasmas), e porque todas as estatísticas são somas de inteiros, que não dependem da ordem em que são combinadas.
 
 \subsection{Junção do resultado e medição do tempo}
 
@@ -429,7 +433,6 @@ e o da simulação é esse valor multiplicado por $P$. O primeiro termo é o tra
 
 Quanto à memória, cada processo guarda sete vetores de $(L/\text{NPrc} + 2) \cdot C$ inteiros. A raiz guarda adicionalmente a matriz global usada na geração e no \emph{checksum} (cinco vetores de $L \cdot C$ inteiros durante a preparação, dois depois da distribuição), de modo que o consumo dela permanece $O(L \cdot C)$. Esse é um limite conhecido desta implementação: o tamanho máximo do problema é determinado pela memória do nó da raiz, consequência direta de a geração e o \emph{checksum} serem sequenciais por definição.
 
-%=====================================================================
 \section{Validação}
 \label{sec:validacao}
 
@@ -484,7 +487,6 @@ A Tabela~\ref{tab:independencia} verifica diretamente o requisito de independên
 \label{tab:independencia}
 \end{table}
 
-%=====================================================================
 \section{Ambiente experimental}
 \label{sec:ambiente}
 
@@ -511,7 +513,6 @@ echo | mpicc -fopenmp -dM -E - | grep -i openmp   # especificação OpenMP supor
 
 Cada configuração foi executada \Valor{reps} vezes e o valor reportado é a mediana dos tempos. O \texttt{mpirun} foi chamado com as \emph{flags} indicadas na Tabela~\ref{tab:ambiente}. A opção \texttt{--map-by node} distribui os processos entre os nós em rodízio, e \texttt{--bind-to none} impede que o Open MPI prenda cada processo a um único núcleo, o que faria as $T$ \emph{threads} de um processo disputarem o mesmo núcleo.
 
-%=====================================================================
 \section{Resultados de desempenho}
 \label{sec:resultados}
 
@@ -630,11 +631,10 @@ A Tabela~\ref{tab:hibrido} agrupa as configurações que usam o mesmo total de n
 
 Com $p = \Valor{hibridoP}$, a combinação mais rápida foi a de \Valor{hibridoMelhorNP} processo(s) com \Valor{hibridoMelhorT} \emph{thread}(s) ($\Valor{hibridoMelhorTempo}$\,s) e a mais lenta a de \Valor{hibridoPiorNP} processo(s) com \Valor{hibridoPiorT} \emph{thread}(s) ($\Valor{hibridoPiorTempo}$\,s), uma diferença de $\Valor{hibridoDiferencaPct}\pct$.
 
-%=====================================================================
 \section{Análise dos resultados}
 \label{sec:analise}
 
-\subsection{Custo da infraestrutura paralela com um único núcleo}
+\subsection{Versão paralela com um único núcleo}
 
 Com um processo e uma \emph{thread}, a versão híbrida executa a carga \Valor{cargaRef} em $\Valor{tempoParUmRef}$\,s, contra $\Valor{tempoSeqRef}$\,s da versão sequencial, ou seja, é $\Valor{diferencaBasePct}\pct$ \Valor{comparacaoBase} (razão $t_\text{seq}/t_\text{par}(1,1) = \Valor{fatorBase}$). Dois efeitos atuam em sentidos opostos nessa comparação. A favor da versão híbrida, as linhas fantasmas eliminam o teste de limites de linha, e apenas as células da primeira e da última coluna passam pelo caminho com verificações, enquanto no sequencial todo o perímetro passa por ele e toda célula intacta testa os quatro limites. Contra ela, pesam as barreiras e as reduções do OpenMP, a criação das duas tarefas e as duas chamadas MPI por passo, que continuam existindo mesmo sem nenhum paralelismo. Como essa razão é próxima de 1, os \emph{speedups} absoluto e relativo ficam próximos entre si, e o \emph{speedup} absoluto pode ser lido como ganho de paralelização.
 
@@ -654,7 +654,7 @@ A razão entre comunicação e computação de um bloco é $2\,\text{NPrc}/L$ (S
 
 \subsection{Processos ou \emph{threads}}
 
-A comparação da Seção~\ref{sec:hibrido} isola o efeito de como um mesmo total de núcleos é dividido entre processos e \emph{threads}. Mais processos significam blocos menores, mais linhas fantasmas e mais participantes na troca e na redução de cada passo, mas também menos \emph{threads} disputando as barreiras de uma mesma região paralela e, quando os processos estão em nós diferentes, mais núcleos físicos e mais largura de banda de memória disponíveis. Mais \emph{threads} por processo significam menos mensagens, porém mais sincronização em memória compartilhada e, acima do número de núcleos físicos do nó, uso de \emph{hyperthreading}. Para $p = \Valor{hibridoP}$, a diferença medida entre a melhor e a pior divisão foi de $\Valor{hibridoDiferencaPct}\pct$, a favor de \Valor{hibridoMelhorNP} processo(s) com \Valor{hibridoMelhorT} \emph{thread}(s).
+A comparação da Seção~\ref{sec:hibrido} isola o efeito de como um mesmo total de núcleos é dividido entre processos e \emph{threads}. Mais processos significam blocos menores, mais linhas fantasmas e mais participantes na troca e na redução de cada passo, mas também menos \emph{threads} disputando as barreiras de uma mesma região paralela e, quando os processos estão em nós diferentes, mais núcleos físicos disponíveis, cada processo usando a memória do seu próprio nó. Mais \emph{threads} por processo significam menos mensagens, porém mais sincronização em memória compartilhada e, acima do número de núcleos físicos do nó, uso de \emph{hyperthreading}. Para $p = \Valor{hibridoP}$, a diferença medida entre a melhor e a pior divisão foi de $\Valor{hibridoDiferencaPct}\pct$, a favor de \Valor{hibridoMelhorNP} processo(s) com \Valor{hibridoMelhorT} \emph{thread}(s).
 
 \TODO{Interpretar o resultado da Tabela~\ref{tab:hibrido} em duas ou três frases, levando em conta como os processos foram distribuídos nos nós (Tabela~\ref{tab:ambiente}): se a melhor divisão é a que coloca um processo por nó com $T$ igual ao número de núcleos físicos do nó, isso indica que a comunicação entre nós é o custo dominante; se é a de mais processos e menos threads, indica que a sincronização do OpenMP ou o hyperthreading pesam mais que as mensagens. Dizer se o padrão se repete nos outros grupos de $p$ da tabela.}
 
@@ -672,19 +672,18 @@ valor que deve ser entendido como um limite superior para este tamanho de proble
 
 \TODO{Olhar a coluna $e(p)$ da Tabela~\ref{tab:escalabilidade} e escrever uma frase dizendo qual das duas situações ocorreu: $e(p)$ aproximadamente constante (limite por fração serial) ou crescente com $p$ (limite por overhead de comunicação e sincronização), citando os valores do primeiro e do último $p$.}
 
-Pela Lei de Gustafson, o custo de comunicação por passo, proporcional a $C$, cresce mais devagar que o trabalho útil, proporcional a $L \cdot C/p$, quando o problema aumenta. Logo, para matrizes maiores que as testadas, a fração do tempo gasta em coordenação diminui e a eficiência para um mesmo $p$ tende a aumentar, o que é coerente com a análise do efeito do tamanho do problema feita acima.
+Quando o problema aumenta, o custo de comunicação por passo, proporcional a $C$, cresce mais devagar que o trabalho útil, proporcional a $L \cdot C/p$. Pela Lei de Gustafson, isso indica que matrizes maiores tendem a ter eficiência maior para um mesmo $p$. Essa é uma expectativa do modelo, que neste relatório só pode ser conferida entre as três cargas medidas, e não foi testada em matrizes maiores.
 
 \subsection{Limitações}
 
-Três limitações da solução decorrem de decisões discutidas ao longo do relatório. A geração da matriz e o \emph{checksum} são sequenciais na raiz, por exigência do enunciado, e não aparecem no tempo cronometrado, mas dominam o tempo total de execução quando o núcleo da simulação é acelerado. A raiz mantém a matriz global, o que limita o tamanho do problema à memória de um nó. Por fim, a decomposição em uma dimensão limita o número útil de processos a uma fração de $L$, pois blocos com poucas linhas gastam proporcionalmente mais tempo trocando fronteiras do que calculando.
+Três limitações da solução decorrem de decisões discutidas ao longo do relatório. A geração da matriz e o \emph{checksum} são sequenciais na raiz, por exigência do enunciado, e não aparecem no tempo cronometrado, mas dominam o tempo total de execução quando o núcleo da simulação é acelerado. A raiz mantém a matriz global, o que limita o tamanho do problema à memória de um nó. Por fim, a divisão da matriz apenas por linhas limita o número útil de processos a uma fração de $L$, pois blocos com poucas linhas gastam proporcionalmente mais tempo trocando fronteiras do que calculando.
 
-%=====================================================================
 \section{Conclusão}
 \label{sec:conclusao}
 
-A versão híbrida em C/MPI/OpenMP produziu resultados \Valor{resultadoValidacao} aos da versão sequencial do primeiro trabalho em todas as \Valor{numExecucoesPar} execuções cronometradas e em toda a bateria de casos de borda, para todas as combinações de processos e \emph{threads} testadas, o que confirma que a decomposição em blocos de linhas com linhas fantasmas preserva exatamente a semântica do modelo (Seção~\ref{sec:validacao}).
+A versão híbrida em C/MPI/OpenMP produziu resultados \Valor{resultadoValidacao} aos da versão sequencial do primeiro trabalho em todas as \Valor{numExecucoesPar} execuções cronometradas e em toda a bateria de casos de borda, para todas as combinações de processos e \emph{threads} testadas, o que confirma que a divisão da matriz em blocos de linhas, com as linhas fantasmas, não altera o resultado do modelo (Seção~\ref{sec:validacao}).
 
-O projeto pela metodologia PCAM levou a uma solução em que a comunicação por passo se resume a duas linhas por processo e a uma redução de seis inteiros, toda ela feita com primitivas coletivas: \emph{broadcast}, \emph{scatter}, coletiva de vizinhança sobre topologia cartesiana, redução global e \emph{gather}. Dentro de cada processo, a região paralela persistente com \texttt{omp for}, \texttt{simd}, reduções e tarefas dispensou \texttt{critical} e \texttt{atomic}, e a separação das linhas de fronteira em tarefas permitiu sobrepor a troca de mensagens ao cálculo do miolo do bloco (Seções~\ref{sec:pcam} e~\ref{sec:impl}).
+O projeto pela metodologia PCAM levou a uma solução em que a comunicação por passo se resume a duas linhas por processo e a uma redução de seis inteiros, toda ela feita com primitivas coletivas: envio dos parâmetros, distribuição da matriz, troca de linhas entre processos vizinhos, redução global e junção do resultado. Dentro de cada processo, a região paralela persistente com \texttt{omp for}, \texttt{simd}, reduções e tarefas dispensou \texttt{critical} e \texttt{atomic}, e a separação das linhas de fronteira em tarefas permitiu calcular o miolo do bloco enquanto as mensagens são trocadas (Seções~\ref{sec:pcam} e~\ref{sec:impl}).
 
 Na carga \Valor{cargaRef}, o melhor tempo foi obtido com \Valor{melhorNP} processos de \Valor{melhorT} \emph{thread}(s), com \emph{speedup} absoluto de $\Valor{melhorSpeedupAbs}\times$ e eficiência de $\Valor{melhorEficienciaAbs}\pct$ sobre \Valor{melhorP} núcleos. \TODO{Fechar com uma ou duas frases que resumam as respostas dadas nos TODOs da Seção~\ref{sec:analise}: onde o speedup satura e por quê, e qual divisão entre processos e threads se mostrou mais vantajosa no cluster.}
 
