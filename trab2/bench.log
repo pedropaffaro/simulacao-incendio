@@ -1,0 +1,39 @@
+make -C entrega
+make[1]: Entering directory '/home/ssc903-ta-g04/trab2/entrega'
+rm -f fire_mpi_omp
+mpicc -Wall -Wextra -O2 -fopenmp -std=c99  fire_mpi_omp.c -o fire_mpi_omp -lm
+make[1]: Leaving directory '/home/ssc903-ta-g04/trab2/entrega'
+./testes/scripts/run_benchmarks.sh
+>> seq      carga=grande reps=5
+>> mpi_omp  carga=grande NPrc=1 T=1 reps=5
+>> mpi_omp  carga=grande NPrc=1 T=2 reps=5
+>> mpi_omp  carga=grande NPrc=1 T=4 reps=5
+>> mpi_omp  carga=grande NPrc=2 T=1 reps=5
+>> mpi_omp  carga=grande NPrc=2 T=2 reps=5
+>> mpi_omp  carga=grande NPrc=2 T=4 reps=5
+>> mpi_omp  carga=grande NPrc=4 T=1 reps=5
+>> mpi_omp  carga=grande NPrc=4 T=2 reps=5
+>> mpi_omp  carga=grande NPrc=4 T=4 reps=5
+>> seq      carga=media reps=5
+>> mpi_omp  carga=media NPrc=1 T=1 reps=5
+>> mpi_omp  carga=media NPrc=1 T=2 reps=5
+>> mpi_omp  carga=media NPrc=1 T=4 reps=5
+>> mpi_omp  carga=media NPrc=2 T=1 reps=5
+>> mpi_omp  carga=media NPrc=2 T=2 reps=5
+>> mpi_omp  carga=media NPrc=2 T=4 reps=5
+>> mpi_omp  carga=media NPrc=4 T=1 reps=5
+>> mpi_omp  carga=media NPrc=4 T=2 reps=5
+>> mpi_omp  carga=media NPrc=4 T=4 reps=5
+>> seq      carga=pequena reps=5
+>> mpi_omp  carga=pequena NPrc=1 T=1 reps=5
+>> mpi_omp  carga=pequena NPrc=1 T=2 reps=5
+>> mpi_omp  carga=pequena NPrc=1 T=4 reps=5
+>> mpi_omp  carga=pequena NPrc=2 T=1 reps=5
+>> mpi_omp  carga=pequena NPrc=2 T=2 reps=5
+>> mpi_omp  carga=pequena NPrc=2 T=4 reps=5
+>> mpi_omp  carga=pequena NPrc=4 T=1 reps=5
+>> mpi_omp  carga=pequena NPrc=4 T=2 reps=5
+>> mpi_omp  carga=pequena NPrc=4 T=4 reps=5
+
+Benchmark concluido. Resultados em testes/resultados/runs.csv e testes/resultados/ambiente.txt
+Proximo passo: python3 testes/scripts/process_results.py (ou 'make plots')

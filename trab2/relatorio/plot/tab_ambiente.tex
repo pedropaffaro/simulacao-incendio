@@ -1,0 +1,19 @@
+\begin{tabular}{@{}lp{0.62\textwidth}@{}}
+\toprule
+Item & Valor \\
+\midrule
+Nós utilizados & 4 \\
+Modelo do processador (por nó) & Intel(R) Core(TM) i7-4790 CPU @ 3.60GHz \\
+Núcleos por nó & 4 físicos / 8 lógicos (2 \emph{thread}(s) por núcleo) \\
+Cache & L1d 128 KiB (4 instances), L2 1 MiB (4 instances), L3 8 MiB (1 instance) \\
+Memória RAM (por nó) & 31Gi \\
+Sistema operacional & Ubuntu 24.04.4 LTS \\
+Compilador (\texttt{mpicc}) & gcc (Ubuntu 5.3.1-14ubuntu2) 5.3.1 20160413 \\
+Implementação MPI & mpirun (Open MPI) 4.0.1 (padrão MPI 3.1) \\
+Especificação OpenMP suportada & \texttt{\_OPENMP} \texttt{201307} \\
+\emph{Flags} de compilação & \texttt{-Wall -Wextra -O2 -fopenmp -std=c99} \\
+\emph{Flags} do \texttt{mpirun} & \texttt{--map-by node --bind-to none} \\
+Repetições por configuração & 5 (mediana) \\
+Data das execuções & 16/11/2026 21:50 \\
+\bottomrule
+\end{tabular}

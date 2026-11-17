@@ -300,7 +300,6 @@ def tabela_ambiente(ambiente: dict[str, str]) -> None:
         ("Especificação OpenMP suportada", f"\\texttt{{\\_OPENMP}} \\texttt{{{valor('openmp')}}}"),
         ("\\emph{Flags} de compilação", f"\\texttt{{{valor('flags')}}}"),
         ("\\emph{Flags} do \\texttt{mpirun}", f"\\texttt{{{valor('mpirun_flags')}}}"),
-        ("Arquivo de \\emph{hosts}", f"\\texttt{{{valor('hostfile')}}}"),
         ("Repetições por configuração", f"{valor('reps')} (mediana)"),
         ("Data das execuções", valor("data")),
     ]
@@ -599,6 +598,10 @@ def main() -> None:
     # A carga de referência das análises de escalabilidade é a maior, e a da tabela de independência é a intermediária
     ref = todas[-1]
     intermediaria = todas[len(todas) // 2]
+
+    # Com --map-by node cada processo fica em um nó, então os nós realmente usados são no máximo o maior NPrc medido
+    if ambiente.get("num_nos", "").isdigit():
+        ambiente["num_nos"] = str(min(int(ambiente["num_nos"]), max(ref["nps"])))
 
     tabela_validacao(todas)
     tabela_independencia(intermediaria)

@@ -1,0 +1,22 @@
+data=16/11/2026 21:50
+cpu_modelo=Intel(R) Core(TM) i7-4790 CPU @ 3.60GHz
+nucleos_fisicos=4
+cpus_logicas=8
+threads_por_nucleo=2
+cache_l1d=128 KiB (4 instances)
+cache_l2=1 MiB (4 instances)
+cache_l3=8 MiB (1 instance)
+nos_numa=1
+memoria=31Gi
+sistema=Ubuntu 24.04.4 LTS
+compilador=gcc (Ubuntu 5.3.1-14ubuntu2) 5.3.1 20160413
+mpi=mpirun (Open MPI) 4.0.1
+mpi_padrao=3.1
+openmp=201307
+flags=-Wall -Wextra -O2 -fopenmp -std=c99
+num_nos=5
+hostfile=testes/hosts/hosts.txt
+mpirun_flags=--map-by node --bind-to none
+np_list=1 2 4
+t_list=1 2 4
+reps=5
